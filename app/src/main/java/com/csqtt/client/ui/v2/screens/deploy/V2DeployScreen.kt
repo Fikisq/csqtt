@@ -120,35 +120,6 @@ import java.util.UUID
 
 private fun isValidPort(value: String): Boolean = value.toIntOrNull() in 1..65535
 
-private data class EffectiveServerPorts(
-    val ssh: Int,
-    val peer: Int,
-    val web: Int,
-)
-
-private fun resolveServerPorts(
-    manualPorts: Boolean,
-    sshPort: String,
-    peerPort: String,
-    webPort: String,
-): EffectiveServerPorts {
-    if (!manualPorts) {
-        return EffectiveServerPorts(
-            ssh = CsqttConstants.Network.DEFAULT_SSH_PORT,
-            peer = CsqttConstants.Network.DEFAULT_SERVER_PEER_PORT,
-            web = CsqttConstants.Network.DEFAULT_SERVER_WEB_PORT,
-        )
-    }
-    return EffectiveServerPorts(
-        ssh = sshPort.toIntOrNull()?.takeIf { it in 1..65535 }
-            ?: CsqttConstants.Network.DEFAULT_SSH_PORT,
-        peer = peerPort.toIntOrNull()?.takeIf { it in 1..65535 }
-            ?: CsqttConstants.Network.DEFAULT_SERVER_PEER_PORT,
-        web = webPort.toIntOrNull()?.takeIf { it in 1..65535 }
-            ?: CsqttConstants.Network.DEFAULT_SERVER_WEB_PORT,
-    )
-}
-
 private fun isDeployMainPasswordValid(password: String): Boolean =
     password.length == 16 && password.matches(Regex("^[a-zA-Z0-9]{16}$"))
 
@@ -357,7 +328,8 @@ fun V2DeployScreen(
     val sshKeysFilled = if (savedSshPrivateKey.isNotBlank()) 1 else 0
     val sshAuthReady = sshLogin.isNotBlank() &&
         if (sshKeysMode) sshKeysFilled == 1 else sshPassword.isNotBlank()
-    val portsValid = !manualPorts || listOf(sshPort, peerPort, webPort).all(::isValidPort)
+    val portsValid = (sshPort.isBlank() || isValidPort(sshPort)) &&
+        (!manualPorts || listOf(peerPort, webPort).all(::isValidPort))
     val actionsBusy = isDeploying || isInspecting || isChangingSecretPath
 
     val panelDisplayUrl = buildString {
