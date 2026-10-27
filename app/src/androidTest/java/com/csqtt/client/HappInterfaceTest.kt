@@ -42,6 +42,38 @@ class HappInterfaceTest {
         compose.waitForIdle()
     }
 
+    @Test fun profileListStaysTheSameWhenThemeChanges() {
+        runBlocking {
+            store.saveProfileName(0, "Theme server A")
+            store.saveProfileConnectionSettings(28, "203.0.113.28", 46000, "FixturePassword28", 10)
+            store.saveProfileName(28, "Theme server B")
+        }
+        for (theme in listOf("light", "dark", "light")) {
+            runBlocking { store.saveThemeMode(theme) }
+            compose.waitForIdle()
+            compose.onNodeWithText("Theme server A").assertExists()
+            compose.onNodeWithText("Theme server B").assertExists()
+            screenshot("review4-connection-$theme.png")
+        }
+        runBlocking { store.clearProfile(28); store.saveProfileName(0, ""); store.saveThemeMode("dark") }
+    }
+
+    @Test fun profileAndTurnPingResultsSurviveNavigationAndReopeningDialogs() {
+        PingResultsCache.saveProfile(0, ProfilePingResult.Success(37))
+        PingResultsCache.saveTurn(TurnSubnetRegistry.subnets.first().id, 51)
+        compose.onNodeWithText("37 мс").assertExists()
+        repeat(2) {
+            compose.onNodeWithText("Туннель").performClick()
+            compose.onNodeWithText("TURN подсети").performClick()
+            compose.onNodeWithText("51 мс").assertExists()
+            compose.onNodeWithContentDescription("Закрыть").performClick()
+            compose.onNodeWithText("Подкл.").performClick()
+            compose.onNodeWithText("37 мс").assertExists()
+        }
+        PingResultsCache.removeProfile(0)
+        PingResultsCache.clearTurn()
+    }
+
     @Test fun participantCanOpenTunnelAndHelpWithoutDeployTab() {
         compose.onNodeWithText("Деплой").assertDoesNotExist()
         compose.onNodeWithText("Туннель").performClick()
@@ -118,6 +150,7 @@ class HappInterfaceTest {
 
     @Test fun selectingTokenLinkUsesItsOwnVkAccountInTunnel() {
         runBlocking {
+            store.saveVkAccessToken("fixture-shared-personal-token", "67890")
             store.saveImportedLink(3, formatCsqttLink("203.0.113.43", 46203, "TokenLinkPassword", token = "test-token-never-sent", power = 25), "Ссылка с токеном")
         }
         compose.waitUntil(5000) { compose.onAllNodesWithText("Ссылка с токеном").fetchSemanticsNodes().isNotEmpty() }
@@ -130,6 +163,9 @@ class HappInterfaceTest {
             check(store.vkHashMode.first() == "auto_api")
             check(store.vkAccessToken.first() == "test-token-never-sent")
             check(store.readProfileConnectionSettings(3).connectionPassword == "TokenLinkPassword")
+            store.clearVkAccessToken()
+            check(store.vkAccessToken.first() == "fixture-shared-personal-token")
+            store.clearVkAccessToken()
         }
     }
 
@@ -214,15 +250,47 @@ class HappInterfaceTest {
         compose.onNodeWithText(nameB).performClick()
         compose.onNodeWithText(nameA).performScrollTo().performClick()
         compose.waitUntil(5000) { runBlocking { deploy.activeProfile.first() == a } }
+        compose.waitUntil(5000) { runBlocking { store.activeProfile.first() == deploy.linkedConnectionProfile(a) } }
         compose.onNodeWithContentDescription("IP сервера").assertTextEquals("203.0.113.81")
         compose.onNodeWithContentDescription("Порт SSH").assertTextEquals("5052")
         runBlocking {
             val savedA = SettingsStore(compose.activity, readOnlyProfile = a).deploySettingsSnapshot.first { it.isLoaded }
             val savedB = SettingsStore(compose.activity, readOnlyProfile = b).deploySettingsSnapshot.first { it.isLoaded }
             check(savedA.serverPeerPort == 48100 && savedA.serverWebPort == 48102)
+            check(savedA.mainPassword.isNotBlank() && savedA.webPassword.isNotBlank() && savedA.webLogin == "admin")
             check(savedB.ip == "203.0.113.82" && savedB.sshPort == "5053")
             check(savedB.serverPeerPort == 48200 && savedB.serverWebPort == 48202)
-            check(store.activeProfile.first() == 0)
+            val linkedA = deploy.linkedConnectionProfile(a)
+            check(store.activeProfile.first() == linkedA)
+            check(store.readProfileConnectionSettings(linkedA).peer == savedA.ip)
+            check(store.profileNames.first()[linkedA] == nameA)
+        }
+        compose.onNodeWithText("Логи").performClick()
+        // A connection cursor can differ from the VPS cursor when the tab is remounted.
+        runBlocking { store.saveActiveProfile(deploy.linkedConnectionProfile(b)) }
+        compose.onNodeWithText("Деплой").performClick()
+        compose.onNodeWithContentDescription("IP сервера").assertTextEquals("203.0.113.81")
+        compose.onNodeWithText(nameA).assertExists()
+        compose.onNodeWithText(nameA).performClick()
+        compose.onNodeWithText(nameB).performScrollTo().performClick()
+        compose.waitUntil(5000) { compose.onAllNodes(hasContentDescription("IP сервера") and hasText("203.0.113.82")).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("IP сервера").assertTextEquals("203.0.113.82")
+        compose.onNodeWithText("Логи").performClick()
+        compose.onNodeWithText("Деплой").performClick()
+        compose.waitUntil(5000) { compose.onAllNodes(hasContentDescription("IP сервера") and hasText("203.0.113.82")).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("IP сервера").assertTextEquals("203.0.113.82")
+        compose.onNodeWithContentDescription("Редактировать VPS").performClick()
+        compose.onNodeWithText("Данные VPS").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Название сервера").performTextReplacement("$nameB renamed")
+        compose.onNodeWithText("Сохранить").performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithText("Данные VPS").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithText("Логи").performClick()
+        compose.onNodeWithText("Деплой").performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithText("$nameB renamed").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("$nameB renamed").assertExists()
+        runBlocking {
+            check(deploy.deployServers.first().any { it.profile == a && it.name == nameA && it.ip == "203.0.113.81" })
+            check(deploy.deployServers.first().any { it.profile == b && it.name == "$nameB renamed" && it.ip == "203.0.113.82" })
         }
     }
 }

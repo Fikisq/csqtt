@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -180,7 +181,8 @@ fun V2DeployScreen(
     LaunchedEffect(Unit) { DeployManager.init(context) }
 
     val savedSettings by settingsStore.deploySettingsSnapshot.collectAsStateWithLifecycle(
-        initialValue = SettingsStore.cachedDeploySnapshot,
+        // The shared cache follows the VPN cursor, which can differ from the VPS cursor.
+        initialValue = DeploySettingsSnapshot(),
     )
     val isDeploying by DeployManager.isDeploying.collectAsStateWithLifecycle()
     val deployServers by settingsStore.deployServers.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -214,19 +216,19 @@ fun V2DeployScreen(
         rememberedInspection.confirmsDeployment() ||
         inspectionResult.confirmsDeployment()
 
-    var showConfigSheet by rememberSaveable { mutableStateOf(false) }
+    var showConfigSheet by remember { mutableStateOf(false) }
     var showActionsMenu by rememberSaveable { mutableStateOf(false) }
-    var showServerMenu by rememberSaveable { mutableStateOf(false) }
-    var addingServer by rememberSaveable { mutableStateOf(false) }
+    var showServerMenu by remember { mutableStateOf(false) }
+    var addingServer by remember { mutableStateOf(false) }
     var serverCardExpanded by rememberSaveable { mutableStateOf(true) }
 
-    var serverName by rememberSaveable(savedSettings.profile) { mutableStateOf(savedSettings.serverName) }
+    var serverName by remember(savedSettings.profile) { mutableStateOf(savedSettings.serverName) }
     val serverTitle = serverName.ifBlank { "Сервер CSQTT" }
 
-    var host by rememberSaveable(savedSettings.profile) { mutableStateOf(savedIp) }
-    var sshLogin by rememberSaveable(savedSettings.profile) { mutableStateOf(savedLogin) }
-    var sshPassword by rememberSaveable(savedSettings.profile) { mutableStateOf(savedPassword) }
-    var sshPort by rememberSaveable(savedSettings.profile) {
+    var host by remember(savedSettings.profile) { mutableStateOf(savedIp) }
+    var sshLogin by remember(savedSettings.profile) { mutableStateOf(savedLogin) }
+    var sshPassword by remember(savedSettings.profile) { mutableStateOf(savedPassword) }
+    var sshPort by remember(savedSettings.profile) {
         mutableStateOf(
             if (savedIp.isBlank()) {
                 ""
@@ -235,36 +237,35 @@ fun V2DeployScreen(
             },
         )
     }
-    var peerPort by rememberSaveable(savedSettings.profile) { mutableStateOf(savedServerPeerPort.toString()) }
-    var webPort by rememberSaveable(savedSettings.profile) { mutableStateOf(savedServerWebPort.toString()) }
-    var dockerInstall by rememberSaveable(savedSettings.profile) { mutableStateOf(savedDockerInstall) }
-    var manualPorts by rememberSaveable(savedSettings.profile) { mutableStateOf(savedManualPorts) }
-    var sshKeysMode by rememberSaveable(savedSettings.profile) { mutableStateOf(savedSshKeysMode) }
+    var peerPort by remember(savedSettings.profile) { mutableStateOf(savedServerPeerPort.toString()) }
+    var webPort by remember(savedSettings.profile) { mutableStateOf(savedServerWebPort.toString()) }
+    var dockerInstall by remember(savedSettings.profile) { mutableStateOf(savedDockerInstall) }
+    var manualPorts by remember(savedSettings.profile) { mutableStateOf(savedManualPorts) }
+    var sshKeysMode by remember(savedSettings.profile) { mutableStateOf(savedSshKeysMode) }
 
-    var showReinstallDialog by rememberSaveable(savedSettings.profile) { mutableStateOf(false) }
+    var showReinstallDialog by remember(savedSettings.profile) { mutableStateOf(false) }
 
-    var showSecretsDialog by rememberSaveable(savedSettings.profile) { mutableStateOf(false) }
-    var showDeployOptions by rememberSaveable(savedSettings.profile) { mutableStateOf(false) }
-    var deployOptionsModeKey by rememberSaveable(savedSettings.profile) {
+    var showSecretsDialog by remember(savedSettings.profile) { mutableStateOf(false) }
+    var showDeployOptions by remember(savedSettings.profile) { mutableStateOf(false) }
+    var deployOptionsModeKey by remember(savedSettings.profile) {
         mutableStateOf(DeployActionMode.Install.name)
     }
-    var showUninstallDialog by rememberSaveable(savedSettings.profile) { mutableStateOf(false) }
-    var showDeleteAppServerDialog by rememberSaveable(savedSettings.profile) { mutableStateOf(false) }
-    var showSshKeysDialog by rememberSaveable(savedSettings.profile) { mutableStateOf(false) }
-    var showDockerInfoDialog by rememberSaveable(savedSettings.profile) { mutableStateOf(false) }
-    var showRegenConfirmDialog by rememberSaveable(savedSettings.profile) { mutableStateOf(false) }
+    var showUninstallDialog by remember(savedSettings.profile) { mutableStateOf(false) }
+    var showDeleteAppServerDialog by remember(savedSettings.profile) { mutableStateOf(false) }
+    var showSshKeysDialog by remember(savedSettings.profile) { mutableStateOf(false) }
+    var showDockerInfoDialog by remember(savedSettings.profile) { mutableStateOf(false) }
+    var showRegenConfirmDialog by remember(savedSettings.profile) { mutableStateOf(false) }
 
-    // Track the last values copied from the store. The draft itself is restored after a page
-    // switch, so syncing only on an actual change keeps unsaved edits instead of resetting them.
-    var syncedHost by rememberSaveable { mutableStateOf(savedIp) }
-    var syncedSshLogin by rememberSaveable { mutableStateOf(savedLogin) }
-    var syncedSshPassword by rememberSaveable { mutableStateOf(savedPassword) }
-    var syncedSshPort by rememberSaveable { mutableStateOf(savedSshPort) }
-    var syncedPeerPort by rememberSaveable { mutableStateOf(savedServerPeerPort) }
-    var syncedWebPort by rememberSaveable { mutableStateOf(savedServerWebPort) }
-    var syncedDockerInstall by rememberSaveable { mutableStateOf(savedDockerInstall) }
-    var syncedManualPorts by rememberSaveable { mutableStateOf(savedManualPorts) }
-    var syncedSshKeysMode by rememberSaveable { mutableStateOf(savedSshKeysMode) }
+    // Load drafts from their own stored slot; tab state must not restore another VPS draft.
+    var syncedHost by remember(savedSettings.profile) { mutableStateOf(savedIp) }
+    var syncedSshLogin by remember(savedSettings.profile) { mutableStateOf(savedLogin) }
+    var syncedSshPassword by remember(savedSettings.profile) { mutableStateOf(savedPassword) }
+    var syncedSshPort by remember(savedSettings.profile) { mutableStateOf(savedSshPort) }
+    var syncedPeerPort by remember(savedSettings.profile) { mutableStateOf(savedServerPeerPort) }
+    var syncedWebPort by remember(savedSettings.profile) { mutableStateOf(savedServerWebPort) }
+    var syncedDockerInstall by remember(savedSettings.profile) { mutableStateOf(savedDockerInstall) }
+    var syncedManualPorts by remember(savedSettings.profile) { mutableStateOf(savedManualPorts) }
+    var syncedSshKeysMode by remember(savedSettings.profile) { mutableStateOf(savedSshKeysMode) }
 
     LaunchedEffect(savedIp) {
         if (savedIp != syncedHost) {
@@ -338,9 +339,16 @@ fun V2DeployScreen(
     }
 
     var mainPassDraft by remember(savedSettings.profile) { mutableStateOf(savedMainPass) }
-    var panelLoginDraft by rememberSaveable(savedSettings.profile) { mutableStateOf(savedWebLogin) }
-    var panelPasswordDraft by rememberSaveable(savedSettings.profile) { mutableStateOf(savedWebPassword) }
+    var panelLoginDraft by remember(savedSettings.profile) { mutableStateOf(savedWebLogin) }
+    var panelPasswordDraft by remember(savedSettings.profile) { mutableStateOf(savedWebPassword) }
     LaunchedEffect(savedMainPass) { mainPassDraft = savedMainPass }
+    LaunchedEffect(savedSettings.profile, savedSettings.isLoaded) {
+        if (savedSettings.isLoaded) settingsStore.ensureDeployProfileDefaults(savedSettings.profile)
+    }
+    LaunchedEffect(savedWebLogin, savedWebPassword) {
+        if (panelLoginDraft.isBlank()) panelLoginDraft = savedWebLogin
+        if (panelPasswordDraft.isBlank()) panelPasswordDraft = savedWebPassword
+    }
     val mainPasswordConfigured = isDeployMainPasswordValid(mainPassDraft)
     val webPanelConfigured = hasWebPanelCredentials(panelLoginDraft, panelPasswordDraft)
     val sshKeysFilled = if (savedSshPrivateKey.isNotBlank()) 1 else 0
@@ -348,7 +356,7 @@ fun V2DeployScreen(
         if (sshKeysMode) sshKeysFilled == 1 else sshPassword.isNotBlank()
     val portsValid = (sshPort.isBlank() || isValidPort(sshPort)) &&
         (!manualPorts || listOf(peerPort, webPort).all(::isValidPort))
-    val actionsBusy = isDeploying || isInspecting || isChangingSecretPath
+    val actionsBusy = !savedSettings.isLoaded || isDeploying || isInspecting || isChangingSecretPath
 
     val panelDisplayUrl = buildString {
         append("https://")
@@ -404,7 +412,7 @@ fun V2DeployScreen(
     fun openAddServerSheet() {
         if (actionsBusy) return
         scope.launch {
-            if (savedIp.isNotBlank()) {
+            if (savedIp.isNotBlank() || savedSettings.profile in settingsStore.occupiedProfiles.first()) {
                 if (tunnelRunning) {
                     showDeployToast("Остановите туннель перед добавлением сервера")
                     return@launch
@@ -414,7 +422,7 @@ fun V2DeployScreen(
                     showDeployToast("Нет свободных профилей для нового сервера")
                     return@launch
                 }
-                if (portsValid) {
+                if (portsValid && savedIp.isNotBlank()) {
                     val ports = resolveServerPorts(true, sshPort, peerPort, webPort)
                     settingsStore.saveDeployProfileDraft(savedSettings.copy(serverName = serverName, ip = host.trim(),
                         sshLogin = sshLogin, sshPassword = sshPassword, sshPort = ports.ssh.toString(),
@@ -424,6 +432,7 @@ fun V2DeployScreen(
                 }
                 addingServer = true
                 clearServerDraft()
+                settingsStore.ensureDeployProfileDefaults(slot)
                 settingsStore.saveActiveProfile(slot)
             } else {
                 addingServer = true
@@ -496,10 +505,30 @@ fun V2DeployScreen(
         draftTracker.value = if(savedSettings.isLoaded && portsValid && !actionsBusy && !addingServer && !draftDiscarded) serverDraft() else null
     }
     DisposableEffect(savedSettings.profile) {
-        onDispose { draftTracker.value?.let { draft -> deployDraftWrites.launch { settingsStore.saveDeployProfileDraft(draft) } } }
+        onDispose {
+            draftTracker.value?.let { draft ->
+                // Queue the departing page before a newly opened form can write newer edits.
+                deployDraftWrites.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                    settingsStore.saveDeployProfileDraft(draft)
+                }
+            }
+        }
     }
-    val saveServerSettings: () -> Unit = { scope.launch { draftDiscarded = false; persistServerDraft(); showDeployToast("Данные VPS сохранены") } }
-    LaunchedEffect(savedSettings.profile, host, sshLogin, sshPassword, sshPort, peerPort, webPort, dockerInstall, sshKeysMode, mainPassDraft, panelLoginDraft, panelPasswordDraft) {
+    val saveServerSettings: () -> Unit = {
+        val draft = serverDraft()
+        val creating = addingServer
+        scope.launch {
+            draftDiscarded = false
+            val connectionProfile = settingsStore.saveDeployProfileDraft(draft, restoreConnection = creating)
+            if (!tunnelRunning && !TunnelManager.starting.value && !TunnelManager.stopping.value &&
+                !TunnelManager.autoPausedForWifi.value && connectionProfile != null)
+                settingsStore.selectConnectionProfile(connectionProfile)
+            showConfigSheet = false
+            addingServer = false
+            showDeployToast("VPS и профиль подключения сохранены")
+        }
+    }
+    LaunchedEffect(savedSettings.profile, serverName, host, sshLogin, sshPassword, sshPort, peerPort, webPort, dockerInstall, sshKeysMode, mainPassDraft, panelLoginDraft, panelPasswordDraft) {
         if (!savedSettings.isLoaded || actionsBusy || addingServer) return@LaunchedEffect
         delay(500)
         if (portsValid) persistServerDraft()
@@ -553,10 +582,10 @@ fun V2DeployScreen(
         DeployManager.startDeploy()
         DeployManager.scope.launch {
             try {
+                settingsStore.saveDeployProfileDraft(deploymentDraft, restoreConnection = true)
                 context.startForegroundService(
                     Intent(context, TunnelService::class.java).apply { action = "DEPLOY_START" },
                 )
-                settingsStore.saveDeployProfileDraft(deploymentDraft)
 
                 var deployDockerMode = dockerInstall
 
@@ -652,7 +681,7 @@ fun V2DeployScreen(
                         )
                     }
                     if (mode != DeployActionMode.Update) {
-                        settingsStore.saveConnectionPassword(deployMainPassword, forProfile = deployProfile)
+                        settingsStore.saveConnectionPassword(deployMainPassword, forProfile = settingsStore.linkedConnectionProfile(deployProfile))
                         TunnelManager.addDeployInfoLog("Пароль подключения синхронизирован с паролем сервера")
                     }
                     showDeployToast("$actionLabel успешно завершена")
@@ -866,6 +895,9 @@ fun V2DeployScreen(
             V2Card(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp), borderColor = colors.outline) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     androidx.compose.material3.TextButton(onClick = { showServerMenu = true }, enabled = !actionsBusy, modifier = Modifier.weight(1f)) { Text(serverTitle, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    V2CircleIconButton(icon = Icons.Default.Edit, contentDescription = "Редактировать VPS", onClick = {
+                        if (!actionsBusy && host.isNotBlank()) { addingServer = false; showConfigSheet = true }
+                    })
                     V2CircleIconButton(icon = Icons.Default.Delete, contentDescription = "Удалить VPS из приложения", onClick = { if(!actionsBusy && host.isNotBlank()) showDeleteAppServerDialog = true })
                     V2CircleIconButton(icon = Icons.Default.Add, contentDescription = "Добавить VPS", onClick = { openAddServerSheet() })
                 }
@@ -921,7 +953,17 @@ fun V2DeployScreen(
     }
     if(showServerMenu) androidx.compose.material3.AlertDialog(onDismissRequest = { showServerMenu = false }, title = { Text("Серверы VPS") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            deployServers.forEach { server -> HappActionRow(server.name, server.ip, { showServerMenu = false; if(!actionsBusy) scope.launch { if(portsValid) persistServerDraft(); settingsStore.saveActiveProfile(server.profile) } }) }
+            deployServers.forEach { server -> HappActionRow(server.name, server.ip, {
+                showServerMenu = false
+                if (!actionsBusy) scope.launch {
+                    if (portsValid) persistServerDraft()
+                    settingsStore.saveActiveProfile(server.profile)
+                    val connectionProfile = settingsStore.linkedConnectionProfile(server.profile)
+                    if (!TunnelManager.running.value && !TunnelManager.starting.value && !TunnelManager.stopping.value &&
+                        !TunnelManager.autoPausedForWifi.value && settingsStore.readProfileConnectionSettings(connectionProfile).peer == server.ip)
+                        settingsStore.selectConnectionProfile(connectionProfile)
+                }
+            }) }
         }
     }, confirmButton = { androidx.compose.material3.TextButton(onClick = { showServerMenu = false; openAddServerSheet() }) { Text("Добавить VPS") } })
 
@@ -950,8 +992,6 @@ fun V2DeployScreen(
             onOpenSecrets = { showSecretsDialog = true },
             onSave = {
                 saveServerSettings()
-                showConfigSheet = false
-                addingServer = false
             },
             onDeleteServer = if (!addingServer && host.isNotBlank()) {
                 {

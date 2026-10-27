@@ -82,13 +82,13 @@ fun V2PowerSlider(
 
     var isInteracting by remember { mutableStateOf(false) }
 
-    // Smooth fluid animation when value snaps or changes
+    // Loading a saved profile is immediate; animate only an ongoing gesture.
     val animatedValue by animateFloatAsState(
         targetValue = if (isFixed) fixedWorkers.toFloat() else localValue,
-        animationSpec = spring(
+        animationSpec = if (isInteracting) spring(
             dampingRatio = Spring.DampingRatioNoBouncy,
             stiffness = if (isInteracting) 1400f else Spring.StiffnessMediumLow,
-        ),
+        ) else androidx.compose.animation.core.snap(),
         label = "power_slider_val",
     )
 

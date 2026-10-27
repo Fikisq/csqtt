@@ -161,10 +161,10 @@ fun v2DarkColorsForPalette(palette: String?): V2Colors = when (palette) {
 }
 
 internal val V2LightColors = V2Colors(
-    background = Color(0xFFF5F5F8),
-    surface = Color(0xFFFFFFFF),
-    surfaceElevated = Color(0xFFDFDFE7),
-    field = Color(0xFFEDEDF2),
+    background = Color(0xFFE5E8EE),
+    surface = Color(0xFFF0F2F6),
+    surfaceElevated = Color(0xFFD6DBE4),
+    field = Color(0xFFE1E5ED),
     outline = Color(0xFFC0C0CB),
     textPrimary = Color(0xFF151519),
     textSecondary = Color(0xFF5F5F6B),

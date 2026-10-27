@@ -12,7 +12,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -220,7 +221,7 @@ fun CsqttV2Root(
             modifier = modifier
                 .fillMaxSize()
                 .background(colors.background)
-                .windowInsetsPadding(WindowInsets.safeDrawing),
+                .windowInsetsPadding(WindowInsets.systemBars),
         ) {
             AnimatedContent(
                 targetState = overlay,
@@ -254,7 +255,7 @@ fun CsqttV2Root(
                     )
 
                     else -> Column(modifier = Modifier.fillMaxSize()) {
-                        Box(modifier = Modifier.weight(1f)) {
+                        Box(modifier = Modifier.weight(1f).imePadding()) {
                             AnimatedContent(
                                 targetState = selectedTab,
                                 transitionSpec = {
