@@ -1532,7 +1532,7 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
             val profile = prefs[ACTIVE_PROFILE] ?: 0
             prefs[getProfileKey(MANUAL_PORTS_ENABLED, profile)] = enabled
             if (!enabled) {
-                prefs[getProfileKey(DEPLOY_SSH_PORT, profile)] = CsqttConstants.Network.DEFAULT_SSH_PORT.toString()
+                // SSH is an existing VPS connection setting, not a CSQTT service port.
                 prefs[getProfileKey(SERVER_PEER_PORT, profile)] = CsqttConstants.Network.DEFAULT_SERVER_PEER_PORT
                 prefs[getProfileKey(SERVER_WEB_PORT, profile)] = CsqttConstants.Network.DEFAULT_SERVER_WEB_PORT
             }

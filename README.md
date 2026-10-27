@@ -47,6 +47,11 @@ CSQTT и веб-панели. Номер SSH-порта сохраняется �
 параметры сервера. Отказ соединения на SSH-порту возникает до проверки пароля;
 работающее подключение VLESS не подтверждает доступность SSH.
 
+Для отдельной тестовой установки, сохраняющей установленную debug-версию,
+соберите `assembleDebug -Pcsqtt.abis=arm64-v8a -Pcsqtt.debugApplicationIdSuffix=.sshfix`.
+Пакет будет называться `csqtt.quic.amurcanov.sshfix`; без этого параметра
+debug-сборка сохраняет прежний суффикс `.forktest`.
+
 ## Лицензия
 
 Этот проект распространяется под лицензией **PolyForm Noncommercial License 1.0.0 (PolyForm-Noncommercial-1.0.0)**.

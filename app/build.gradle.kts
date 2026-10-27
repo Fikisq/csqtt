@@ -107,7 +107,8 @@ android {
 
     buildTypes {
         getByName("debug") {
-            applicationIdSuffix = ".forktest"
+            applicationIdSuffix = providers.gradleProperty("csqtt.debugApplicationIdSuffix")
+                .getOrElse(".forktest")
             versionNameSuffix = "-fork-test.3"
         }
         getByName("release") {
