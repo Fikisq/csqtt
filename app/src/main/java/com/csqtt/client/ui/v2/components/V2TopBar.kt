@@ -39,62 +39,19 @@ fun V2TopBar(
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val colors = V2Theme.colors
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(V2Sizes.TopBarHeight),
-    ) {
-        Row(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .height(V2Sizes.CircleButton),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            when {
-                onBack != null -> V2BackButton(
-                    onClick = onBack,
-                )
-
-                version != null -> V2VersionPill(
-                    version = version,
-                    onClick = onVersionClick,
-                )
+    androidx.compose.foundation.layout.Column(modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (onBack != null) V2BackButton(onClick = onBack)
+            androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
+                Text("CSQTTR", color = colors.accent, fontWeight = FontWeight.Bold, fontSize = 25.sp)
+                version?.let { Text(it.substringBefore('-'), color = colors.textSecondary, fontSize = 11.sp) }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                actions()
+                if (onSettings != null) V2CircleIconButton(iconPainter = painterResource(R.drawable.ic_v2_settings), contentDescription = "Настройки", onClick = onSettings)
             }
         }
-
-        title?.let {
-            Text(
-                text = it,
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontFamily = V2VersionFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                ),
-                color = colors.textPrimary,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                modifier = Modifier.align(Alignment.Center),
-            )
-        }
-
-        Row(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .height(V2Sizes.CircleButton),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            actions()
-            if (onSettings != null) {
-                V2CircleIconButton(
-                    iconPainter = painterResource(R.drawable.ic_v2_settings),
-                    contentDescription = "Настройки",
-                    onClick = onSettings,
-                )
-            }
-        }
+        if (title != null) Text(title, color = colors.textPrimary, fontSize = 22.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(bottom = 8.dp))
     }
 }
 

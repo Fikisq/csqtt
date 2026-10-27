@@ -62,6 +62,8 @@ import com.csqtt.client.ui.v2.screens.logs.V2LogsScreen
 import com.csqtt.client.ui.v2.screens.routing.V2RoutingScreen
 import com.csqtt.client.ui.v2.screens.settings.V2AboutScreen
 import com.csqtt.client.ui.v2.screens.settings.V2SettingsScreen
+import com.csqtt.client.ui.v2.screens.settings.HappTunnelScreen
+import com.csqtt.client.ui.v2.screens.settings.HappSettingsScreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
@@ -91,19 +93,9 @@ fun CsqttV2Root(
         val context = LocalContext.current.applicationContext
         val lifecycleOwner = LocalLifecycleOwner.current
         val scope = rememberCoroutineScope()
-        val participantMode by settingsStore.csqttLinkMode.collectAsStateWithLifecycle(initialValue = false)
-        val participantShowLogs by settingsStore.participantShowLogs.collectAsStateWithLifecycle(
-            initialValue = false,
-        )
-        val tabs = remember(participantMode, participantShowLogs) {
-            V2Tab.entries.filter { tab ->
-                when (tab) {
-                    V2Tab.Deploy -> !participantMode
-                    V2Tab.Logs -> !participantMode || participantShowLogs
-                    else -> true
-                }
-            }
-        }
+        val ownerMode by settingsStore.uiOwnerMode.collectAsStateWithLifecycle(initialValue = false)
+        val deployStore = remember(context) { SettingsStore(context, deployScope = true) }
+        val tabs = remember(ownerMode) { V2Tab.entries.filter { it != V2Tab.Deploy || ownerMode } }
         var selectedTabName by rememberSaveable { mutableStateOf(V2Tab.Connection.name) }
         val tabStateHolder = rememberSaveableStateHolder()
         var overlay by rememberSaveable { mutableStateOf<String?>(null) }
@@ -249,12 +241,11 @@ fun CsqttV2Root(
                 modifier = Modifier.fillMaxSize(),
             ) { currentOverlay ->
                 when (currentOverlay) {
-                    OVERLAY_SETTINGS -> V2SettingsScreen(
+                    OVERLAY_SETTINGS -> HappSettingsScreen(
                         settingsStore = settingsStore,
                         version = version,
                         onBack = { overlay = null },
                         onAbout = { overlay = OVERLAY_ABOUT },
-                        onVkAuthRequested = onVkAuthRequested,
                     )
 
                     OVERLAY_ABOUT -> V2AboutScreen(
@@ -283,10 +274,11 @@ fun CsqttV2Root(
                                             onOpenResourceMonitor = { showResourceSheet = true },
                                             profilePickerRequest = profilePickerRequest,
                                             onInvalidConfiguration = {
-                                                selectedTabName = V2Tab.Connection.name
-                                                profilePickerRequest += 1
+                                                selectedTabName = V2Tab.Tunnel.name
                                             },
                                         )
+
+                                        V2Tab.Tunnel -> HappTunnelScreen(settingsStore, version, { overlay = OVERLAY_SETTINGS }, onVkAuthRequested)
 
                                         V2Tab.Logs -> V2LogsScreen(
                                             version = version,
@@ -295,7 +287,7 @@ fun CsqttV2Root(
                                         )
 
                                         V2Tab.Deploy -> V2DeployScreen(
-                                            settingsStore = settingsStore,
+                                            settingsStore = deployStore,
                                             version = version,
                                             onSettings = { overlay = OVERLAY_SETTINGS },
                                             onVersionClick = { showVersionSheet = true },

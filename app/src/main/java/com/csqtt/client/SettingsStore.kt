@@ -170,11 +170,12 @@ private fun encodeSubscriptionMeta(meta: Map<String, SubscriptionMeta>): String 
     return json.toString()
 }
 
-class SettingsStore(context: Context) {
+class SettingsStore(context: Context, deployScope: Boolean = false) {
     private val appContext = context.applicationContext
     companion object {
         private val Context.dataStore by preferencesDataStore("settings")
         private val ACTIVE_PROFILE = intPreferencesKey("active_profile")
+        private val UI_OWNER_MODE = booleanPreferencesKey("ui_owner_mode")
         private val SHOW_SYSTEM_APPS = booleanPreferencesKey("show_system_apps")
         private val LOGGING_ENABLED = booleanPreferencesKey("logging_enabled")
         private val INFO_ACTIONS_EXPANDED = booleanPreferencesKey("info_actions_expanded")
@@ -405,7 +406,9 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
         }
     }
 
-    private val dataStore = appContext.dataStore
+    private val dataStore = if (deployScope) DeployScopedDataStore(appContext.dataStore) else appContext.dataStore
+    val uiOwnerMode: Flow<Boolean> = appContext.dataStore.data.map { it[UI_OWNER_MODE] ?: false }
+    suspend fun saveUiOwnerMode(owner: Boolean) { appContext.dataStore.edit { it[UI_OWNER_MODE] = owner } }
     private val secureStore = SecureStringStore(appContext)
 
     val activeProfile: Flow<Int> = dataStore.data.map {
@@ -841,6 +844,7 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
         dataStore.edit { prefs ->
             prefs[getProfileKey(PEER, profile)] = peer.trim()
             prefs[getProfileKey(SERVER_PEER_PORT, profile)] = serverPeerPort.coerceIn(1, 65535)
+            if (serverPeerPort != CsqttConstants.Network.DEFAULT_SERVER_PEER_PORT) prefs[getProfileKey(MANUAL_PORTS_ENABLED, profile)] = true
             prefs[getProfileKey(WORKERS_PER_HASH, profile)] =
                 WorkerCountPolicy.normalize(workersPerHash)
             val localKey = getProfileKey(CONNECTION_PASSWORD_LOCAL, profile)
@@ -1014,7 +1018,7 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
         (CsqttConstants.Profiles.MIN_INDEX..CsqttConstants.Profiles.MAX_INDEX).firstOrNull { p ->
             val peer = prefs[getProfileKey(PEER, p)]
             val link = prefs[getProfileKey(CSQTT_LINK, p)]
-            peer.isNullOrBlank() && link.isNullOrBlank()
+            peer.isNullOrBlank() && link.isNullOrBlank() && prefs[getProfileKey(DEPLOY_IP, p)].isNullOrBlank()
         }
     }.first()
 
