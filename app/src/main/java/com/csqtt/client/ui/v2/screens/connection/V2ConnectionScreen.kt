@@ -117,6 +117,7 @@ fun V2ConnectionScreen(
     val cooldownActive by TunnelManager.cooldownActive.collectAsStateWithLifecycle()
     val uptimeSeconds by TunnelManager.uptimeSeconds.collectAsStateWithLifecycle()
     val tunnelBusy = tunnelRunning || tunnelStarting || tunnelStopping || autoPausedForWifi
+    val profileChecking by com.csqtt.client.ProfileTunnelProbe.isChecking.collectAsStateWithLifecycle()
 
     val peer by settingsStore.peer.collectAsStateWithLifecycle(initialValue = "")
     val vkHashes by settingsStore.vkHashes.collectAsStateWithLifecycle(initialValue = "")
@@ -314,6 +315,7 @@ fun V2ConnectionScreen(
     }
 
     fun toggleTunnel() {
+        if (profileChecking) return
         if (tunnelRunning || tunnelStarting || autoPausedForWifi) {
             context.startService(Intent(context, TunnelService::class.java).apply { action = "STOP" })
             return
@@ -363,7 +365,7 @@ fun V2ConnectionScreen(
 
     // --- visuals ---
     val isStarting = tunnelStarting && !tunnelRunning && !tunnelStopping
-    val canToggle = !tunnelStopping &&
+    val canToggle = !profileChecking && !tunnelStopping &&
         (tunnelRunning || isStarting || autoPausedForWifi || !cooldownActive || !configurationValid)
     val activeVisual = tunnelRunning || isStarting || autoPausedForWifi || tunnelStopping
 
@@ -371,25 +373,25 @@ fun V2ConnectionScreen(
         V2TopBar(version = version, onSettings = onSettings, actions = {
             V2CircleIconButton(iconPainter = painterResource(R.drawable.ic_v2_plus), contentDescription = "Добавить профиль", onClick = { showAddChoiceDialog = true })
         })
-        Row(Modifier.fillMaxWidth().height(48.dp).clickable { showProfileDialog = true }, verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(if(activeProfile in occupiedProfiles) profileDisplayName(activeProfile, profileNames, profileSubscriptions) else "Нет профилей", color = colors.textPrimary, fontSize = 14.sp)
-                Text(peer, color = colors.textSecondary, fontSize = 11.sp)
-            }
-            Icon(Icons.Outlined.KeyboardArrowDown, "Выбрать профиль", tint = colors.textSecondary)
-        }
-        Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            androidx.compose.material3.Surface(shape = androidx.compose.foundation.shape.CircleShape,
+                color = colors.accentSoft, modifier = Modifier.size(204.dp)) {
+                Box(contentAlignment = Alignment.Center) {
             androidx.compose.material3.Surface(onClick = { toggleTunnel() }, enabled = canToggle, shape = androidx.compose.foundation.shape.CircleShape,
                 color = if(activeVisual) colors.accent else colors.flower,
                 border = androidx.compose.foundation.BorderStroke(2.dp, colors.accent.copy(alpha = 0.65f)), modifier = Modifier.size(172.dp)) {
-                Box(contentAlignment = Alignment.Center) { Icon(androidx.compose.material.icons.Icons.Outlined.PowerSettingsNew, if(activeVisual) "Отключить" else "Подключить", tint = if(colors.background.luminance() < 0.5f || activeVisual) androidx.compose.ui.graphics.Color.White else colors.onContrast, modifier = Modifier.size(64.dp)) }
+                Column(verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                    val buttonText = if(colors.background.luminance() < 0.5f || activeVisual) androidx.compose.ui.graphics.Color.White else colors.onContrast
+                    Icon(androidx.compose.material.icons.Icons.Outlined.PowerSettingsNew, if(activeVisual) "Отключить" else "Подключить", tint = buttonText, modifier = Modifier.size(56.dp))
+                    Text(when { profileChecking -> "Проверка…"; tunnelStopping -> "Остановка…"; isStarting -> "Подключение…"; autoPausedForWifi -> "Пауза Wi-Fi"; tunnelRunning -> "Подключено"; else -> "Отключено" },
+                        fontSize = 13.sp, color = buttonText, modifier = Modifier.padding(top = 10.dp))
+                    if(tunnelRunning) Text(formatTunnelUptime(uptimeSeconds), fontSize = 13.sp, color = buttonText, modifier = Modifier.padding(top = 4.dp))
+                }
             }
-            Text(when { tunnelStopping -> "Остановка…"; isStarting -> "Подключение…"; autoPausedForWifi -> "Пауза Wi-Fi"; tunnelRunning -> "Подключено"; else -> "Отключено" },
-                fontSize = 20.sp, color = colors.textPrimary, modifier = Modifier.padding(top = 16.dp))
-            Text(if(activeVisual) connectionHint(tunnelRunning,isStarting,tunnelStopping,autoPausedForWifi,cooldownActive,uptimeSeconds,true) else "Нажмите для подключения",
-                fontSize = 12.sp, color = colors.textSecondary, modifier = Modifier.padding(top = 6.dp, bottom = 8.dp))
+                }
+            }
         }
-        HappServerList(settingsStore, activeProfile, tunnelBusy, { creatingProfile = false; editingProfile = it }, Modifier.padding(bottom = 8.dp))
+        HappServerList(settingsStore, activeProfile, tunnelBusy, { creatingProfile = false; editingProfile = it }, Modifier.weight(1f).padding(bottom = 8.dp))
     }
     if(showProfileDialog) androidx.compose.ui.window.Dialog(onDismissRequest = { showProfileDialog = false }) {
         V2ProfilePickerMenu(settingsStore, activeProfile, profileNames, occupiedProfiles, profileSubscriptions, tunnelBusy, { showProfileDialog = false }, { creatingProfile = false; editingProfile = it })

@@ -189,7 +189,7 @@ class MainActivity : ComponentActivity() {
                         showVkAuthDialog = false
                         authScope.launch {
                             appSettingsStore.saveVkAccessToken(payload.token, payload.userId)
-                            authContext.showRaisedToast("Вечный VK access token сохранен", Toast.LENGTH_SHORT)
+                            authContext.showRaisedToast("Токен VK сохранён", Toast.LENGTH_SHORT)
                         }
                     },
                     onDismiss = { showVkAuthDialog = false },

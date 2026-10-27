@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Dispatchers
+import kotlin.math.roundToInt
 
 private val draftWrites = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -51,18 +52,21 @@ fun HappTunnelScreen(settingsStore: SettingsStore, version: String, onSettings: 
     val subnet by settingsStore.selectedTurnSubnet.collectAsStateWithLifecycle("")
     val ipLimit by settingsStore.turnSubnetIpLimit.collectAsStateWithLifecycle("ALL")
     val results by settingsStore.vkHashCheckResults.collectAsStateWithLifecycle("{}")
+    val extraWorkers by settingsStore.extraWorkers.collectAsStateWithLifecycle(false)
+    val workerMaximum = WorkerCountPolicy.defaultMaximum(extraWorkers && authMode != "auto_js")
     var loaded by remember(profile) { mutableStateOf(false) }
     var host by remember(profile) { mutableStateOf("") }
     var port by remember(profile) { mutableStateOf("46000") }
     var password by remember(profile) { mutableStateOf("") }
-    var workers by remember(profile) { mutableIntStateOf(18) }
+    var workers by remember(profile) { mutableIntStateOf(10) }
     var picker by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Int?>(null) }
     var showHashes by remember { mutableStateOf(false) }
     var showSubnets by remember { mutableStateOf(false) }
+    val effectiveWorkers = WorkerCountPolicy.normalize(workers, workerMaximum)
     val draftTracker = remember(profile) { mutableStateOf<ProfileConnectionSnapshot?>(null) }
     SideEffect {
-        draftTracker.value = if (loaded && !busy) ProfileConnectionSnapshot(peer = host, serverPeerPort = port.toIntOrNull() ?: 0, connectionPassword = password, workersPerHash = workers) else null
+        draftTracker.value = if (loaded && !busy) ProfileConnectionSnapshot(peer = host, serverPeerPort = port.toIntOrNull() ?: 0, connectionPassword = password, workersPerHash = effectiveWorkers) else null
     }
     DisposableEffect(profile) {
         val slot = profile
@@ -78,11 +82,11 @@ fun HappTunnelScreen(settingsStore: SettingsStore, version: String, onSettings: 
         host = saved.peer; port = saved.serverPeerPort.toString(); password = saved.connectionPassword
         workers = saved.workersPerHash; loaded = true
     }
-    LaunchedEffect(profile, loaded, host, port, password, workers) {
+    LaunchedEffect(profile, loaded, host, port, password, effectiveWorkers) {
         if (!loaded || busy) return@LaunchedEffect
         delay(350)
         val validPort = port.toIntOrNull()?.takeIf { it in 1..65535 } ?: return@LaunchedEffect
-        settingsStore.saveProfileConnectionSettings(profile, host, validPort, password, workers)
+        settingsStore.saveProfileConnectionSettings(profile, host, validPort, password, effectiveWorkers)
     }
     fun changeHash(label: String) { scope.launch { settingsStore.saveVkHashMode(when(label) { "Авто API" -> "auto_api"; "Авто ВК" -> "auto_js"; else -> "manual" }) } }
     val parts = hashes.split(Regex("[,\\s]+" )).filter(String::isNotBlank)
@@ -122,9 +126,11 @@ fun HappTunnelScreen(settingsStore: SettingsStore, version: String, onSettings: 
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("Потоки", Modifier.weight(1f), fontSize = 13.sp)
                     HappHelp("Потоки", "Число параллельных TURN-потоков. Настройка относится к текущему профилю.")
-                    Surface(color = c.accentSoft, shape = RoundedCornerShape(10.dp)) { Text(workers.toString(), color = c.accent, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) }
+                    Surface(color = c.accentSoft, shape = RoundedCornerShape(10.dp)) { Text(effectiveWorkers.toString(), color = c.accent, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) }
                 }
-                Slider(workers.toFloat(), { workers = it.toInt() }, valueRange = 5f..100f, enabled = !busy, modifier = Modifier.fillMaxWidth().height(28.dp))
+                Slider(workers.coerceIn(10, workerMaximum).toFloat(), { workers = WorkerCountPolicy.normalize(it.roundToInt(), workerMaximum) },
+                    valueRange = 10f..workerMaximum.toFloat(), steps = workerMaximum / 10 - 2,
+                    enabled = !busy, modifier = Modifier.fillMaxWidth().height(28.dp))
                 HappActionRow("TURN подсети", subnet.ifBlank { "Автоматически" }, { showSubnets = true })
             }
             Spacer(Modifier.height(4.dp))

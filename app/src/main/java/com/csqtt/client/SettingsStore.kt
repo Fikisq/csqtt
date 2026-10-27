@@ -170,7 +170,7 @@ private fun encodeSubscriptionMeta(meta: Map<String, SubscriptionMeta>): String 
     return json.toString()
 }
 
-class SettingsStore(context: Context, deployScope: Boolean = false) {
+class SettingsStore(context: Context, deployScope: Boolean = false, readOnlyProfile: Int? = null) {
     private val appContext = context.applicationContext
     companion object {
         private val Context.dataStore by preferencesDataStore("settings")
@@ -406,7 +406,11 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
         }
     }
 
-    private val dataStore = if (deployScope) DeployScopedDataStore(appContext.dataStore) else appContext.dataStore
+    private val dataStore = when {
+        readOnlyProfile != null -> ReadOnlyProfileDataStore(appContext.dataStore, readOnlyProfile)
+        deployScope -> DeployScopedDataStore(appContext.dataStore)
+        else -> appContext.dataStore
+    }
     val uiOwnerMode: Flow<Boolean> = appContext.dataStore.data.map { it[UI_OWNER_MODE] ?: false }
     suspend fun saveUiOwnerMode(owner: Boolean) { appContext.dataStore.edit { it[UI_OWNER_MODE] = owner } }
     private val secureStore = SecureStringStore(appContext)
@@ -1242,7 +1246,7 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
     // other threads at once. Above the flows they read, a collector could run before its flow was assigned and call
     // collect on null, which crashed the app at launch on slower phones (Redmi).
     init {
-        if (migrationsStarted.compareAndSet(false, true)) {
+        if (readOnlyProfile == null && migrationsStarted.compareAndSet(false, true)) {
             CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
                 migrateConnectionPasswordsToLocalStorage()
                 migrateSecretsToKeystore()
@@ -1251,7 +1255,7 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
                 migrateDeployServerNames()
             }
         }
-        if (uiCacheStarted.compareAndSet(false, true)) {
+        if (readOnlyProfile == null && uiCacheStarted.compareAndSet(false, true)) {
             CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
                 launch {
                     dataStore.edit { prefs ->

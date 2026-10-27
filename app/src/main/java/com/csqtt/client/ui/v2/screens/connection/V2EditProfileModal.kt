@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.csqtt.client.CsqttConstants
 import com.csqtt.client.SettingsStore
+import kotlinx.coroutines.flow.first
 import com.csqtt.client.TunnelManager
 import com.csqtt.client.defaultProfileName
 import com.csqtt.client.showRaisedToast
@@ -93,6 +94,7 @@ fun V2EditProfileModal(
     var participantMode by rememberSaveable(profile) { mutableStateOf(false) }
     var subscriptionTitle by rememberSaveable(profile) { mutableStateOf("") }
     var subscriptionPower by rememberSaveable(profile) { mutableIntStateOf(0) }
+    var profileWorkerMaximum by rememberSaveable(profile) { mutableIntStateOf(CsqttConstants.Tunnel.DEFAULT_MAX_WORKERS) }
 
     var peerError by remember { mutableStateOf(false) }
     var portError by remember { mutableStateOf(false) }
@@ -105,7 +107,7 @@ fun V2EditProfileModal(
     val serverWorkers by TunnelManager.serverAssignedWorkers.collectAsStateWithLifecycle()
     val workersLocked = tunnelRunning && profile == activeProfile
     val fixedWorkers = serverWorkers.takeIf { workersLocked && it in 3..100 }
-    val workersCap = subscriptionPower.takeIf { it in 10..100 } ?: CsqttConstants.Tunnel.MAX_WORKERS
+    val workersCap = subscriptionPower.takeIf { it in 10..100 }?.coerceAtMost(profileWorkerMaximum) ?: profileWorkerMaximum
 
     fun deleteProfile() {
         scope.launch {
@@ -117,8 +119,9 @@ fun V2EditProfileModal(
 
     LaunchedEffect(profile) {
         val snapshot = settingsStore.readProfileConnectionSettings(profile)
-        val cap = snapshot.subscriptionPower.takeIf { it in 10..100 }
-            ?: CsqttConstants.Tunnel.MAX_WORKERS
+        val configuredAuthMode = SettingsStore(context, readOnlyProfile = profile).vkAuthMode.first()
+        profileWorkerMaximum = com.csqtt.client.WorkerCountPolicy.defaultMaximum(snapshot.extraWorkers && configuredAuthMode != "auto_js")
+        val cap = snapshot.subscriptionPower.takeIf { it in 10..100 }?.coerceAtMost(profileWorkerMaximum) ?: profileWorkerMaximum
         subscriptionTitle = snapshot.subscriptionTitle
         subscriptionPower = snapshot.subscriptionPower
         peerInput = snapshot.peer
@@ -126,7 +129,7 @@ fun V2EditProfileModal(
         passwordInput = snapshot.connectionPassword
         passwordUnreadable = snapshot.connectionPasswordState ==
             com.csqtt.client.StoredSecretState.Unreadable
-        workers = snapshot.workersPerHash.toFloat().coerceIn(5f, cap.toFloat())
+        workers = com.csqtt.client.WorkerCountPolicy.normalize(snapshot.workersPerHash, cap).toFloat()
         linkInput = snapshot.csqttLink
         participantMode = snapshot.csqttLinkMode
         if (snapshot.csqttLinkMode) {
