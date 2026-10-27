@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.sp
 import com.csqtt.client.ui.v2.design.V2Theme
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.csqtt.client.SettingsStore
+import com.csqtt.client.BatterySaver
 import com.csqtt.client.ui.v2.components.*
 import com.csqtt.client.ui.v2.dialogs.V2ImportExportDialog
 import kotlinx.coroutines.launch
@@ -26,6 +27,9 @@ fun HappSettingsScreen(settingsStore: SettingsStore, version: String, onBack: ()
     val logs by settingsStore.loggingEnabled.collectAsStateWithLifecycle(true)
     val theme by settingsStore.themeMode.collectAsStateWithLifecycle("system")
     val fingerprint by settingsStore.selectedFingerprint.collectAsStateWithLifecycle("chrome")
+    val design by settingsStore.uiDesign.collectAsStateWithLifecycle("v2")
+    val batteryMode by settingsStore.batterySaverMode.collectAsStateWithLifecycle(BatterySaver.DEFAULT_MODE)
+    val batteryPercent by settingsStore.batterySaverPercent.collectAsStateWithLifecycle(BatterySaver.DEFAULT_PERCENT)
     var transfer by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         V2TopBar(title = "Настройки", onBack = onBack)
@@ -54,10 +58,20 @@ fun HappSettingsScreen(settingsStore: SettingsStore, version: String, onBack: ()
                 V2SwitchSetting("Ведение логов", logs, { scope.launch { settingsStore.saveLoggingEnabled(it) } })
             }
             V2Card(contentPadding = PaddingValues(12.dp)) {
+                HappChoice("Дизайн", if (design == "classic") "Классический" else "Новый", listOf("Новый", "Классический"), {
+                    scope.launch { settingsStore.saveUiDesign(if (it == "Классический") "classic" else "v2") }
+                })
                 HappChoice("Оформление", when(theme) { "light" -> "Светлое"; "dark" -> "Тёмное"; else -> "Системное" }, listOf("Тёмное", "Светлое", "Системное"), { scope.launch { settingsStore.saveThemeMode(when(it) { "Тёмное" -> "dark"; "Светлое" -> "light"; else -> "system" }) } })
                 HappChoice("Отпечаток TLS", fingerprint, listOf("chrome", "firefox", "safari"), { scope.launch { settingsStore.saveFingerprint(it) } })
                 HappActionRow("Импорт / экспорт", onClick = { transfer = true })
                 HappActionRow("О приложении", onClick = onAbout)
+            }
+            V2Card(contentPadding = PaddingValues(12.dp)) {
+                HappChoice(BatterySaver.TITLE, BatterySaver.MODES.first { it.first == batteryMode }.second,
+                    BatterySaver.MODES.map { it.second }, { label -> scope.launch { settingsStore.saveBatterySaverMode(BatterySaver.MODES.first { it.second == label }.first) } },
+                    help = BatterySaver.DESCRIPTION)
+                HappChoice(BatterySaver.LEVEL_TITLE, "≤ $batteryPercent %", BatterySaver.PERCENT_CHOICES.map { "≤ $it %" },
+                    { label -> label.filter(Char::isDigit).toIntOrNull()?.let { scope.launch { settingsStore.saveBatterySaverPercent(it) } } }, enabled = batteryMode == BatterySaver.MODE_LEVEL)
             }
         }
     }

@@ -61,10 +61,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import com.csqtt.client.ui.v2.dialogs.V2AppUpdateDialog as AppUpdateDialog
+import com.csqtt.client.ui.legacy.AppUpdateDialog
 import com.csqtt.client.ui.legacy.ConnectionTab
 import com.csqtt.client.ui.legacy.ExceptionsTab
 import com.csqtt.client.ui.legacy.FloatingToolbar
@@ -78,7 +80,6 @@ import com.csqtt.client.ui.legacy.design.CsqttMotion
 import com.csqtt.client.ui.legacy.design.CsqttShapes
 import com.csqtt.client.ui.v2.dialogs.V2VkAuthDialog as VkAuthDialog
 import com.csqtt.client.ui.legacy.utils.parseCsqttLink
-import com.csqtt.client.ui.v2.CsqttV2Config
 import com.csqtt.client.ui.v2.navigation.CsqttV2Root
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -136,15 +137,25 @@ class MainActivity : ComponentActivity() {
         checkAndRequestNotifications()
 
         com.csqtt.client.ui.v2.screens.settings.preloadAvatars(this)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (isActive) { SubscriptionSync.refreshDue(appSettingsStore); delay(30_000L) }
+            }
+        }
 
         setContent {
             val authContext = LocalContext.current.applicationContext
             val authScope = rememberCoroutineScope()
             val uiStateHolder = rememberSaveableStateHolder()
+            val design by appSettingsStore.uiDesign.collectAsStateWithLifecycle<String?>(initialValue = null)
+            val chosenTheme by appSettingsStore.themeMode.collectAsStateWithLifecycle("system")
+            val dark = when (chosenTheme) { "dark" -> true; "light" -> false; else -> androidx.compose.foundation.isSystemInDarkTheme() }
             if (renderUi) {
-                uiStateHolder.SaveableStateProvider("main_ui") {
+                uiStateHolder.SaveableStateProvider("main_ui_${design ?: "loading"}") {
             val settingsStore = remember { appSettingsStore }
-            if (CsqttV2Config.ENABLED) {
+            if (design == null) {
+                // Wait for the stored choice instead of briefly drawing the other design.
+            } else if (design == "v2") {
                 CsqttV2Root(
                     settingsStore = settingsStore,
                     onVkAuthRequested = { showVkAuthDialog = true },
@@ -184,19 +195,22 @@ class MainActivity : ComponentActivity() {
                 }
             }
             if (showVkAuthDialog) {
-                VkAuthDialog(
-                    onToken = { payload ->
+                val onToken: (VkAuthPayload) -> Unit = { payload ->
                         showVkAuthDialog = false
                         authScope.launch {
                             appSettingsStore.saveVkAccessToken(payload.token, payload.userId)
                             authContext.showRaisedToast("Токен VK сохранён", Toast.LENGTH_SHORT)
                         }
-                    },
-                    onDismiss = { showVkAuthDialog = false },
-                )
+                    }
+                if (design == "classic") CSQTTTheme(themeMode = chosenTheme) {
+                    com.csqtt.client.ui.legacy.dialogs.VkAuthDialog(onToken, onDismiss = { showVkAuthDialog = false })
+                } else com.csqtt.client.ui.v2.design.CsqttV2Theme(darkTheme = dark) {
+                    VkAuthDialog(onToken, onDismiss = { showVkAuthDialog = false })
+                }
             }
             val pendingLink = pendingDeepLink
             if (pendingLink != null) {
+                com.csqtt.client.ui.v2.design.CsqttV2Theme(darkTheme = dark) {
                 com.csqtt.client.ui.v2.dialogs.V2BrowserImportDialog(
                     rawLink = pendingLink,
                     settingsStore = remember { appSettingsStore },
@@ -206,6 +220,7 @@ class MainActivity : ComponentActivity() {
                         showRaisedToast("Профиль «$name» успешно импортирован", Toast.LENGTH_SHORT)
                     },
                 )
+                }
             }
         }
     }
@@ -322,13 +337,15 @@ fun MainScreen(
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val activeProfile by settingsStore.activeProfile.collectAsStateWithLifecycle(initialValue = 0)
-    val deploySettings by settingsStore.deploySettingsSnapshot.collectAsStateWithLifecycle(
+    val deployStore = remember(context.applicationContext) { SettingsStore(context.applicationContext, deployScope = true) }
+    val deploySettings by deployStore.deploySettingsSnapshot.collectAsStateWithLifecycle(
         initialValue = DeploySettingsSnapshot()
     )
     val tunnelAuthSettings by settingsStore.tunnelAuthSnapshot.collectAsStateWithLifecycle(
         initialValue = TunnelAuthSnapshot()
     )
-    val csqttLinkMode = tunnelAuthSettings.csqttLinkMode
+    val ownerMode by settingsStore.uiOwnerMode.collectAsStateWithLifecycle(false)
+    val csqttLinkMode = !ownerMode // Navigation role is independent of a profile's link authentication.
     val participantShowLogs by settingsStore.participantShowLogs.collectAsStateWithLifecycle(initialValue = false)
     val autoPauseOnWifi by settingsStore.autoPauseOnWifi.collectAsStateWithLifecycle(initialValue = false)
     val excludedApps by settingsStore.excludedApps.collectAsStateWithLifecycle(
@@ -553,7 +570,7 @@ fun MainScreen(
                                     Spacer(modifier = Modifier.fillMaxSize())
                                 }
                                 2 -> if (!csqttLinkMode) {
-                                    DeployTab(settingsStore, deploySettings)
+                                    DeployTab(deployStore, deploySettings)
                                 } else {
                                     Spacer(modifier = Modifier.fillMaxSize())
                                 }

@@ -267,6 +267,9 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
         private val VK_ACCOUNT_TOKEN = stringPreferencesKey("vk_account_token")
         private val VK_ACCOUNT_TOKEN_ENCRYPTED = stringPreferencesKey("vk_account_token_encrypted")
         private val VK_ACCOUNT_USER_ID = stringPreferencesKey("vk_account_user_id")
+        private val UI_DESIGN = stringPreferencesKey("ui_design")
+        private val BATTERY_SAVER_MODE = stringPreferencesKey("battery_saver_mode")
+        private val BATTERY_SAVER_PERCENT = intPreferencesKey("battery_saver_percent")
         private val DEPLOY_CONNECTION_PROFILE = intPreferencesKey("deploy_connection_profile")
         private val PROFILE_REVISION = longPreferencesKey("profile_revision")
         private val PROFILE_REMOVED = booleanPreferencesKey("profile_removed")
@@ -419,6 +422,12 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
         else -> appContext.dataStore
     }
     val uiOwnerMode: Flow<Boolean> = appContext.dataStore.data.map { it[UI_OWNER_MODE] ?: false }
+    val uiDesign: Flow<String> = appContext.dataStore.data.map { if (it[UI_DESIGN] == "classic") "classic" else "v2" }
+    suspend fun saveUiDesign(design: String) { require(design in listOf("classic", "v2")); appContext.dataStore.edit { it[UI_DESIGN] = design } }
+    val batterySaverMode: Flow<String> = appContext.dataStore.data.map { prefs -> prefs[BATTERY_SAVER_MODE]?.takeIf { mode -> BatterySaver.MODES.any { it.first == mode } } ?: BatterySaver.DEFAULT_MODE }
+    val batterySaverPercent: Flow<Int> = appContext.dataStore.data.map { (it[BATTERY_SAVER_PERCENT] ?: BatterySaver.DEFAULT_PERCENT).coerceIn(5, 95) }
+    suspend fun saveBatterySaverMode(mode: String) { require(BatterySaver.MODES.any { it.first == mode }); appContext.dataStore.edit { it[BATTERY_SAVER_MODE] = mode } }
+    suspend fun saveBatterySaverPercent(percent: Int) { appContext.dataStore.edit { it[BATTERY_SAVER_PERCENT] = percent.coerceIn(5, 95) } }
     suspend fun saveUiOwnerMode(owner: Boolean) { appContext.dataStore.edit { it[UI_OWNER_MODE] = owner } }
     private val secureStore = SecureStringStore(appContext)
 
@@ -2464,6 +2473,12 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
             remove(profEncryptedKey)
             remove(profLegacyKey)
         } else {
+            // An unchanged draft must not create fresh ciphertext and wake every collector.
+            if (!this[profEncryptedKey].isNullOrBlank() &&
+                readSecret(this, encryptedKey, legacyKey, profile) == value) {
+                remove(profLegacyKey)
+                return
+            }
             this[profEncryptedKey] = secureStore.encrypt(value)
             remove(profLegacyKey)
         }
@@ -2560,6 +2575,9 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
         if (includeSettings) {
             val settings = JSONObject()
             settings.put("theme_mode", prefs[THEME_MODE] ?: "system")
+            settings.put("ui_design", prefs[UI_DESIGN] ?: "v2")
+            settings.put("battery_saver_mode", prefs[BATTERY_SAVER_MODE] ?: BatterySaver.DEFAULT_MODE)
+            settings.put("battery_saver_percent", prefs[BATTERY_SAVER_PERCENT] ?: BatterySaver.DEFAULT_PERCENT)
             settings.put("is_dynamic_color", prefs[IS_DYNAMIC_COLOR] ?: false)
             settings.put("theme_palette", prefs[THEME_PALETTE] ?: "pure_black")
             settings.put("auto_pause_on_wifi", prefs[AUTO_PAUSE_ON_WIFI] ?: false)
@@ -2651,6 +2669,9 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
                 if (includeSettings && root.has("settings")) {
                     val s = root.getJSONObject("settings")
                     if (s.has("theme_mode")) mutable[THEME_MODE] = s.getString("theme_mode")
+                    s.optString("ui_design").takeIf { it in listOf("classic", "v2") }?.let { mutable[UI_DESIGN] = it }
+                    s.optString("battery_saver_mode").takeIf { mode -> BatterySaver.MODES.any { it.first == mode } }?.let { mutable[BATTERY_SAVER_MODE] = it }
+                    if (s.has("battery_saver_percent")) mutable[BATTERY_SAVER_PERCENT] = s.getInt("battery_saver_percent").coerceIn(5, 95)
                     if (s.has("is_dynamic_color")) mutable[IS_DYNAMIC_COLOR] = s.getBoolean("is_dynamic_color")
                     if (s.has("theme_palette")) mutable[THEME_PALETTE] = s.getString("theme_palette")
                     if (s.has("auto_pause_on_wifi")) mutable[AUTO_PAUSE_ON_WIFI] = s.getBoolean("auto_pause_on_wifi")

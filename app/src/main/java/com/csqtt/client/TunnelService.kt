@@ -37,6 +37,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import android.os.BatteryManager
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.net.HttpURLConnection
@@ -107,6 +109,14 @@ class TunnelService : Service() {
     private var autoPauseRequested = false
     @Volatile
     private var autoPausedForWifi = false
+    private var batterySaverLoaded = false
+    private var batterySaverMode = BatterySaver.DEFAULT_MODE
+    private var batterySaverPercent = BatterySaver.DEFAULT_PERCENT
+    private var batteryLevel = -1
+    private var batteryCharging = false
+    private var systemPowerSave = false
+    private var batteryReceiver: BroadcastReceiver? = null
+    private var batterySaverJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -119,6 +129,7 @@ class TunnelService : Service() {
         registerPhysicalNetworkCallback()
         observeAutoPauseOnWifi()
         observeDomainRoutingSettings()
+        observeBatterySaver()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -1218,7 +1229,67 @@ class TunnelService : Service() {
         }
     }
 
+    private fun observeBatterySaver() {
+        val pm = getSystemService(PowerManager::class.java)
+        systemPowerSave = pm?.isPowerSaveMode == true
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action == PowerManager.ACTION_POWER_SAVE_MODE_CHANGED) {
+                    systemPowerSave = pm?.isPowerSaveMode == true
+                } else readBattery(intent)
+                reconcileBatterySaver()
+            }
+        }
+        runCatching {
+            ContextCompat.registerReceiver(this, receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED).apply {
+                addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
+            }, ContextCompat.RECEIVER_NOT_EXPORTED)
+        }.onSuccess { sticky -> batteryReceiver = receiver; sticky?.let(::readBattery) }
+        batterySaverJob = serviceScope.launch {
+            val store = SettingsStore(applicationContext)
+            // Also reconcile after a deploy: its CPU lock is protected only while the operation runs.
+            combine(store.batterySaverMode, store.batterySaverPercent, DeployManager.isDeploying, TunnelManager.running) {
+                mode, percent, _, _ -> mode to percent
+            }.collect { (mode, percent) ->
+                withContext(Dispatchers.Main) {
+                    batterySaverMode = mode
+                    batterySaverPercent = percent
+                    batterySaverLoaded = true
+                    reconcileBatterySaver()
+                }
+            }
+        }
+    }
+
+    private fun readBattery(intent: Intent) {
+        val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+        batteryLevel = if (level >= 0 && scale > 0) level * 100 / scale else -1
+        val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+        batteryCharging = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0 ||
+            status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+    }
+
+    private fun reconcileBatterySaver() {
+        if (!batterySaverLoaded) return
+        val save = BatterySaver.shouldSave(batterySaverMode, batterySaverPercent, batteryLevel, batteryCharging, systemPowerSave)
+        val changed = save != BatterySaver.active.value
+        BatterySaver.setActive(save)
+        if (save) {
+            if (!DeployManager.isDeploying.value) releaseWakeLock()
+        } else if ((TunnelManager.running.value && !autoPausedForWifi) || DeployManager.isDeploying.value) {
+            acquireWakeLock()
+        }
+        TunVpnService.instance?.onBatterySaverChanged(save)
+        if (changed) TunnelManager.updateLog("battery_saver", if (save) "[BAT] ${BatterySaver.BADGE}" else "[BAT] Экономия батареи выключена", 2)
+    }
+
+    @Synchronized
     private fun acquireWakeLock() {
+        if (BatterySaver.active.value && !DeployManager.isDeploying.value) {
+            releaseWakeLock()
+            return
+        }
         val now = SystemClock.elapsedRealtime()
         if (wakeLock?.isHeld == true && now < wakeLockExpiresAtElapsedMs - WAKE_LOCK_RENEWAL_WINDOW_MS) return
         if (wakeLock?.isHeld == true) wakeLock?.release()
@@ -1244,6 +1315,7 @@ class TunnelService : Service() {
         }
     }
 
+    @Synchronized
     private fun releaseWakeLock() {
         if (wakeLock?.isHeld == true) {
             wakeLock?.release()
@@ -1414,6 +1486,11 @@ class TunnelService : Service() {
         autoPauseSettingsJob = null
         domainRoutingSettingsJob?.cancel()
         domainRoutingSettingsJob = null
+        batterySaverJob?.cancel()
+        batterySaverJob = null
+        batteryReceiver?.let { runCatching { unregisterReceiver(it) } }
+        batteryReceiver = null
+        BatterySaver.setActive(false)
         stopWifiAutoPauseWatch()
         updateJob?.cancel()
         networkSwapJob?.cancel()

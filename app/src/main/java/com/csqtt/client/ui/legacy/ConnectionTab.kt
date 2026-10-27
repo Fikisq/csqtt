@@ -349,6 +349,9 @@ private fun TunnelConnectionPanel(
             )
 
             TunnelUptimeText(tunnelRunning = tunnelRunning || autoPausedForWifi || tunnelStopping)
+            val batterySaving by com.csqtt.client.BatterySaver.active.collectAsStateWithLifecycle()
+            if (batterySaving && tunnelRunning) Text(com.csqtt.client.BatterySaver.BADGE,
+                style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.tertiary)
         }
     }
 }

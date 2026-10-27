@@ -167,8 +167,9 @@ private fun DeploySettingsSnapshot.toInspectionResult(): ServerInspectionResult?
     }
 
 @Composable
-fun V2DeployScreen(
+internal fun V2DeployScreen(
     settingsStore: SettingsStore,
+    savedSettings: DeploySettingsSnapshot,
     version: String,
     onSettings: () -> Unit,
     modifier: Modifier = Modifier,
@@ -178,12 +179,7 @@ fun V2DeployScreen(
     val scope = rememberCoroutineScope()
     val colors = V2Theme.colors
 
-    LaunchedEffect(Unit) { DeployManager.init(context) }
-
-    val savedSettings by settingsStore.deploySettingsSnapshot.collectAsStateWithLifecycle(
-        // The shared cache follows the VPN cursor, which can differ from the VPS cursor.
-        initialValue = DeploySettingsSnapshot(),
-    )
+    if (!savedSettings.isLoaded) return
     val isDeploying by DeployManager.isDeploying.collectAsStateWithLifecycle()
     val deployServers by settingsStore.deployServers.collectAsStateWithLifecycle(initialValue = emptyList())
     val tunnelRunning by TunnelManager.running.collectAsStateWithLifecycle()

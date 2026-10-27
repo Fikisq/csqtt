@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import com.csqtt.client.SettingsStore
+import com.csqtt.client.BatterySaver
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -63,6 +64,10 @@ fun FloatingToolbar(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val selectedRole = if (csqttLinkMode) UsageRole.Participant else UsageRole.Owner
+    val design by settingsStore.uiDesign.collectAsStateWithLifecycle("v2")
+    val batteryMode by settingsStore.batterySaverMode.collectAsStateWithLifecycle(BatterySaver.DEFAULT_MODE)
+    val batteryPercent by settingsStore.batterySaverPercent.collectAsStateWithLifecycle(BatterySaver.DEFAULT_PERCENT)
+    var showBatteryInfo by rememberSaveable { mutableStateOf(false) }
     val vkAuthMode by settingsStore.vkAuthMode.collectAsStateWithLifecycle(
         initialValue = CsqttConstants.VkAuth.MODE_CALLS,
     )
@@ -259,7 +264,7 @@ fun FloatingToolbar(
                         onSelected = { role ->
                             val participant = role == UsageRole.Participant
                             if (participant != csqttLinkMode) {
-                                scope.launch { settingsStore.saveCsqttLinkMode(participant) }
+                                scope.launch { settingsStore.saveUiOwnerMode(!participant) }
                             }
                         },
                         modifier = Modifier
@@ -316,6 +321,21 @@ fun FloatingToolbar(
                         onSelected = onThemeChange,
                     )
 
+                    CompactDropdownSetting(
+                        title = "Дизайн", selectedKey = design,
+                        options = listOf("classic" to "Классический", "v2" to "Новый"), enabled = true,
+                        onSelected = { scope.launch { settingsStore.saveUiDesign(it) } },
+                    )
+                    CompactDropdownSetting(
+                        title = BatterySaver.TITLE, selectedKey = batteryMode, options = BatterySaver.MODES, enabled = true,
+                        onSelected = { scope.launch { settingsStore.saveBatterySaverMode(it) } },
+                        onTitleInfo = { showBatteryInfo = true },
+                    )
+                    CompactDropdownSetting(
+                        title = BatterySaver.LEVEL_TITLE, selectedKey = batteryPercent.toString(),
+                        options = BatterySaver.PERCENT_CHOICES.map { it.toString() to "≤ $it %" }, enabled = batteryMode == BatterySaver.MODE_LEVEL,
+                        onSelected = { it.toIntOrNull()?.let { value -> scope.launch { settingsStore.saveBatterySaverPercent(value) } } },
+                    )
                     CsqttSettingRow(
                         title = "Автопауза при Wi-Fi",
                         checked = autoPauseOnWifi,
@@ -369,6 +389,9 @@ fun FloatingToolbar(
     if (showAutoPauseInfo) {
         WifiAutoPauseInfoDialog(onDismiss = { showAutoPauseInfo = false })
     }
+    if (showBatteryInfo) AlertDialog(onDismissRequest = { showBatteryInfo = false },
+        title = { Text(BatterySaver.TITLE) }, text = { Text(BatterySaver.DESCRIPTION) },
+        confirmButton = { TextButton(onClick = { showBatteryInfo = false }) { Text("Понятно") } })
 
     if (showTurnSubnetsDialog) {
         TurnSubnetsDialog(

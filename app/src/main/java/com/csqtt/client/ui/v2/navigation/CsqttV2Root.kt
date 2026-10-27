@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +39,7 @@ import com.csqtt.client.BuildConfig
 import com.csqtt.client.CsqttConstants
 import com.csqtt.client.DEFAULT_UPDATE_CHECK_INTERVAL_HOURS
 import com.csqtt.client.SettingsStore
+import com.csqtt.client.DeploySettingsSnapshot
 import com.csqtt.client.SubscriptionSync
 import com.csqtt.client.TunnelManager
 import com.csqtt.client.UPDATE_CHECK_NEVER
@@ -96,6 +98,8 @@ fun CsqttV2Root(
         val scope = rememberCoroutineScope()
         val ownerMode by settingsStore.uiOwnerMode.collectAsStateWithLifecycle(initialValue = false)
         val deployStore = remember(context) { SettingsStore(context, deployScope = true) }
+        // Keep this store's own snapshot ready, without reviving a saved form from another VPS.
+        val deploySettings by deployStore.deploySettingsSnapshot.collectAsStateWithLifecycle(DeploySettingsSnapshot())
         val tabs = remember(ownerMode) { V2Tab.entries.filter { it != V2Tab.Deploy || ownerMode } }
         var selectedTabName by rememberSaveable { mutableStateOf(V2Tab.Connection.name) }
         val tabStateHolder = rememberSaveableStateHolder()
@@ -114,15 +118,6 @@ fun CsqttV2Root(
         LaunchedEffect(selectedTab) {
             selectedTabName = selectedTab.name
             if (selectedTab == V2Tab.Logs) TunnelManager.clearUnreadErrors()
-        }
-
-        LaunchedEffect(lifecycleOwner) {
-            lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                while (isActive) {
-                    SubscriptionSync.refreshDue(settingsStore)
-                    delay(30_000L)
-                }
-            }
         }
 
         LaunchedEffect(Unit) {
@@ -256,15 +251,8 @@ fun CsqttV2Root(
 
                     else -> Column(modifier = Modifier.fillMaxSize()) {
                         Box(modifier = Modifier.weight(1f).imePadding()) {
-                            AnimatedContent(
-                                targetState = selectedTab,
-                                transitionSpec = {
-                                    val isForward = targetState.ordinal > initialState.ordinal
-                                    V2Transitions.tabTransition(isForward = isForward)
-                                },
-                                label = "v2_tab_transition",
-                                modifier = Modifier.fillMaxSize(),
-                            ) { tab ->
+                            key(selectedTab) {
+                                val tab = selectedTab
                                 tabStateHolder.SaveableStateProvider(key = tab.name) {
                                     when (tab) {
                                         V2Tab.Connection -> V2ConnectionScreen(
@@ -289,6 +277,7 @@ fun CsqttV2Root(
 
                                         V2Tab.Deploy -> V2DeployScreen(
                                             settingsStore = deployStore,
+                                            savedSettings = deploySettings,
                                             version = version,
                                             onSettings = { overlay = OVERLAY_SETTINGS },
                                             onVersionClick = { showVersionSheet = true },

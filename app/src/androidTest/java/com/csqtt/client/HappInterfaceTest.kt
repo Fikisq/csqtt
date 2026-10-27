@@ -96,8 +96,13 @@ class HappInterfaceTest {
         compose.onNodeWithText("Проверить VPS").assertDoesNotExist()
         compose.onNodeWithText("Логин веб-панели").assertIsDisplayed()
         compose.onNodeWithText("Пароль веб-панели").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Сгенерировать пароль туннеля").performClick()
         val deploy = SettingsStore(compose.activity, deployScope = true)
+        runBlocking { deploy.saveDockerInstall(true) }
+        compose.waitUntil(5000) { compose.onAllNodes(isToggleable() and isOn()).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Логи").performClick()
+        compose.onNodeWithText("Деплой").performClick()
+        compose.onNode(isToggleable()).assertIsOn()
+        compose.onNodeWithContentDescription("Сгенерировать пароль туннеля").performClick()
         compose.waitUntil(5000) { runBlocking { deploy.deploySettingsSnapshot.first { it.isLoaded }.mainPassword.matches(Regex("[A-Za-z0-9]{16}")) } }
         compose.onNodeWithText("Удалить с сервера").assertExists()
         compose.runOnIdle { runBlocking { check(store.uiOwnerMode.first()) } }

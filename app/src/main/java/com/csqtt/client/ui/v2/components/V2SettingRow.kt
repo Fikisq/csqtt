@@ -32,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,6 +46,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
+import kotlinx.coroutines.delay
 import com.csqtt.client.ui.v2.design.V2BodyFamily
 import com.csqtt.client.ui.v2.design.V2Shapes
 import com.csqtt.client.ui.v2.design.V2Sizes
@@ -90,7 +94,7 @@ fun V2SettingRow(
     }
 }
 
-/** Custom sleek matte switch with spring physics */
+/** Stored values appear immediately; only a user toggle animates. */
 @Composable
 fun V2Switch(
     checked: Boolean,
@@ -100,12 +104,17 @@ fun V2Switch(
 ) {
     val colors = V2Theme.colors
     val light = colors.background.luminance() > 0.5f
+    var userToggle by remember { mutableStateOf(false) }
+    LaunchedEffect(checked, userToggle) {
+        if (userToggle) { delay(300); userToggle = false }
+    }
     val thumbOffset by animateFloatAsState(
         targetValue = if (checked) 22f else 0f,
-        animationSpec = spring(dampingRatio = 0.8f, stiffness = 500f),
+        animationSpec = if (userToggle) spring(dampingRatio = 0.8f, stiffness = 500f) else androidx.compose.animation.core.snap(),
         label = "v2-switch-thumb",
     )
     val trackColor by animateColorAsState(
+        animationSpec = if (userToggle) androidx.compose.animation.core.tween(180) else androidx.compose.animation.core.snap(),
         targetValue = when {
             !enabled -> colors.field
             checked -> colors.accent
@@ -114,6 +123,7 @@ fun V2Switch(
         label = "v2-switch-track",
     )
     val thumbColor by animateColorAsState(
+        animationSpec = if (userToggle) androidx.compose.animation.core.tween(180) else androidx.compose.animation.core.snap(),
         targetValue = when {
             !enabled -> colors.textMuted
             checked -> Color.White
@@ -129,11 +139,13 @@ fun V2Switch(
             .clip(V2Shapes.Pill)
             .background(trackColor)
             .border(1.dp, if(checked || light) colors.accent.copy(alpha = 0.65f) else colors.textSecondary.copy(alpha = 0.6f), V2Shapes.Pill)
-            .clickable(
+            .toggleable(
+                value = checked,
+                role = Role.Switch,
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 enabled = enabled,
-            ) { onCheckedChange(!checked) }
+            ) { userToggle = true; onCheckedChange(it) }
             .padding(4.dp),
         contentAlignment = Alignment.CenterStart,
     ) {

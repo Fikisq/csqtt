@@ -391,6 +391,8 @@ fun V2ConnectionScreen(
                 }
             }
         }
+        val batterySaving by com.csqtt.client.BatterySaver.active.collectAsStateWithLifecycle()
+        if (batterySaving && tunnelRunning) Text(com.csqtt.client.BatterySaver.BADGE, color = colors.warning, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp))
         HappServerList(settingsStore, activeProfile, tunnelBusy, { creatingProfile = false; editingProfile = it }, Modifier.weight(1f).padding(bottom = 8.dp))
     }
     if(showProfileDialog) androidx.compose.ui.window.Dialog(onDismissRequest = { showProfileDialog = false }) {
