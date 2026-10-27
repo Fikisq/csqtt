@@ -109,6 +109,8 @@ android {
         getByName("debug") {
             applicationIdSuffix = providers.gradleProperty("csqtt.debugApplicationIdSuffix")
                 .getOrElse(".forktest")
+            manifestPlaceholders["csqttDebugAppLabel"] = providers.gradleProperty("csqtt.debugAppLabel")
+                .getOrElse("@string/app_name")
             versionNameSuffix = "-fork-test.3"
         }
         getByName("release") {
