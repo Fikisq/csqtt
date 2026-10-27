@@ -61,6 +61,13 @@ class HappInterfaceTest {
         compose.onNodeWithText("IP сервера").assertIsDisplayed()
         compose.onNodeWithText("Порт SSH").assertIsDisplayed()
         compose.onNodeWithText("Установка в Docker").assertExists()
+        compose.onNodeWithText("Проверить VPS").assertDoesNotExist()
+        compose.onNodeWithText("Логин веб-панели").assertIsDisplayed()
+        compose.onNodeWithText("Пароль веб-панели").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Сгенерировать пароль туннеля").performClick()
+        val deploy = SettingsStore(compose.activity, deployScope = true)
+        compose.waitUntil(5000) { runBlocking { deploy.deploySettingsSnapshot.first { it.isLoaded }.mainPassword.matches(Regex("[A-Za-z0-9]{16}")) } }
+        compose.onNodeWithText("Удалить с сервера").assertExists()
         compose.runOnIdle { runBlocking { check(store.uiOwnerMode.first()) } }
         screenshot("happ-deploy.png")
     }
@@ -139,5 +146,83 @@ class HappInterfaceTest {
         compose.onNodeWithText("Сохранить").performClick()
         compose.waitUntil(5000) { runBlocking { store.vkHashes.first().startsWith("edited-hash-1234567890,") } }
         runBlocking { check(store.vkHashes.first().split(',').drop(1) == hashes.drop(1)) }
+    }
+
+    @Test fun logsCanFilterErrorsAndRemoveSeparatorLines() {
+        compose.runOnIdle {
+            TunnelManager.logs.clear()
+            TunnelManager.logs.add(LogEntry("deploy_fixture_error", "[ERR] Тест: SSH отклонён", isError = true, level = LogLevel.ERR))
+            TunnelManager.logs.add(LogEntry("fixture_ok", "[OK] Тест: соединение готово", level = LogLevel.OK))
+            TunnelManager.logs.add(LogEntry("fixture_separator", "────────────", level = LogLevel.LOG))
+        }
+        compose.onNodeWithText("Логи").performClick()
+        compose.onNodeWithText("Все уровни ▾").performClick()
+        compose.onNodeWithText("Ошибки").performClick()
+        compose.onNodeWithText("Тест: SSH отклонён").assertIsDisplayed()
+        compose.onNodeWithText("Тест: соединение готово").assertDoesNotExist()
+        compose.onNodeWithText("────────────").assertDoesNotExist()
+        screenshot("ui-logs-review3.png")
+        compose.onNodeWithText("Ошибки ▾").performClick()
+        compose.onNodeWithText("Все уровни").performClick()
+        compose.onNodeWithText("Тест: соединение готово").assertIsDisplayed()
+    }
+
+    @Test fun vpsEditorShowsPortsAndFormatHintsWithoutConnectionWorkers() {
+        compose.onNodeWithContentDescription("Настройки").performClick()
+        compose.onNodeWithText("Участник").performClick()
+        compose.onNodeWithText("Владелец").performClick()
+        compose.onNodeWithContentDescription("Назад").performClick()
+        compose.onNodeWithText("Деплой").performClick()
+        compose.onNodeWithContentDescription("Добавить VPS").performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithText("Новый VPS").fetchSemanticsNodes().isNotEmpty() }
+        compose.onAllNodesWithText("203.0.113.10 или vpn.example.com").onLast().assertIsDisplayed()
+        compose.onNodeWithText("Потоки").assertDoesNotExist()
+        compose.onNodeWithText("Сохранить").assertIsDisplayed()
+        screenshot("ui-vps-editor-review3.png")
+        compose.onNodeWithText("Отмена").performClick()
+    }
+
+    @Test fun twoVpsProfilesCanBeAddedAndSelectedWithoutMixingTheirConnectionData() {
+        compose.onNodeWithContentDescription("Настройки").performClick()
+        compose.onNodeWithText("Участник").performClick()
+        compose.onNodeWithText("Владелец").performClick()
+        compose.onNodeWithContentDescription("Назад").performClick()
+        compose.onNodeWithText("Деплой").performClick()
+        val deploy = SettingsStore(compose.activity, deployScope = true)
+        fun add(name: String, ip: String, ssh: String, peer: String, web: String): Int {
+            compose.onNodeWithContentDescription("Добавить VPS").performClick()
+            compose.waitUntil(5000) { compose.onAllNodesWithText("Новый VPS").fetchSemanticsNodes().isNotEmpty() }
+            fun edit(label: String, value: String) { compose.onAllNodesWithContentDescription(label).onLast().performTextReplacement(value) }
+            edit("Название сервера", name)
+            edit("IP сервера", ip)
+            edit("Порт SSH", ssh)
+            edit("Логин SSH", "test-user")
+            edit("Пароль SSH", "fixture-password")
+            edit("Порт PEER", peer)
+            edit("Порт WEB", web)
+            compose.onNodeWithText("Сохранить").performClick()
+            compose.waitUntil(5000) { compose.onAllNodesWithText("Новый VPS").fetchSemanticsNodes().isEmpty() }
+            compose.waitUntil(5000) { runBlocking { deploy.deploySettingsSnapshot.first { it.isLoaded }.ip == ip } }
+            return runBlocking { deploy.activeProfile.first() }
+        }
+        val suffix = System.nanoTime().toString().takeLast(6)
+        val nameA = "VPS A $suffix"
+        val nameB = "VPS B $suffix"
+        val a = add(nameA, "203.0.113.81", "5052", "48100", "48102")
+        val b = add(nameB, "203.0.113.82", "5053", "48200", "48202")
+        check(a != b)
+        compose.onNodeWithText(nameB).performClick()
+        compose.onNodeWithText(nameA).performScrollTo().performClick()
+        compose.waitUntil(5000) { runBlocking { deploy.activeProfile.first() == a } }
+        compose.onNodeWithContentDescription("IP сервера").assertTextEquals("203.0.113.81")
+        compose.onNodeWithContentDescription("Порт SSH").assertTextEquals("5052")
+        runBlocking {
+            val savedA = SettingsStore(compose.activity, readOnlyProfile = a).deploySettingsSnapshot.first { it.isLoaded }
+            val savedB = SettingsStore(compose.activity, readOnlyProfile = b).deploySettingsSnapshot.first { it.isLoaded }
+            check(savedA.serverPeerPort == 48100 && savedA.serverWebPort == 48102)
+            check(savedB.ip == "203.0.113.82" && savedB.sshPort == "5053")
+            check(savedB.serverPeerPort == 48200 && savedB.serverWebPort == 48202)
+            check(store.activeProfile.first() == 0)
+        }
     }
 }

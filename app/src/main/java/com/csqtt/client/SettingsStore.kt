@@ -1616,9 +1616,10 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
     }
 
     /** Removes every stored deploy setting and secret for the active profile. */
-    suspend fun clearDeployProfile() {
-        val profile = activeProfile.first()
+    suspend fun clearDeployProfile(forProfile: Int? = null) {
+        val profile = forProfile ?: activeProfile.first()
         dataStore.edit { prefs ->
+            val hasConnection = !prefs[getProfileKey(PEER, profile)].isNullOrBlank() || !prefs[getProfileKey(CSQTT_LINK, profile)].isNullOrBlank()
             prefs.remove(getProfileKey(DEPLOY_IP, profile))
             prefs.remove(getProfileKey(DEPLOY_SERVER_NAME, profile))
             prefs.remove(getProfileKey(DEPLOY_LOGIN, profile))
@@ -1630,9 +1631,9 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
             prefs.remove(getProfileKey(DEPLOY_WEB_PASSWORD, profile))
             prefs.remove(getProfileKey(DEPLOY_WEB_PASSWORD_ENCRYPTED, profile))
             prefs.remove(getProfileKey(DEPLOY_SSH_PORT, profile))
-            prefs.remove(getProfileKey(SERVER_PEER_PORT, profile))
+            if (!hasConnection) prefs.remove(getProfileKey(SERVER_PEER_PORT, profile))
             prefs.remove(getProfileKey(SERVER_WEB_PORT, profile))
-            prefs.remove(getProfileKey(MANUAL_PORTS_ENABLED, profile))
+            if (!hasConnection) prefs.remove(getProfileKey(MANUAL_PORTS_ENABLED, profile))
             prefs.remove(getProfileKey(SSH_KEYS_MODE, profile))
             prefs.remove(getProfileKey(DOCKER_INSTALL, profile))
             prefs.remove(getProfileKey(DEPLOY_SECRET_PATH_ENABLED, profile))
@@ -1651,18 +1652,52 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
             prefs.remove(getProfileKey(SSH_KEY_PASSPHRASE_ENCRYPTED, profile))
             prefs.remove(getProfileKey(SSH_CERTIFICATE, profile))
             prefs.remove(getProfileKey(SSH_CERTIFICATE_ENCRYPTED, profile))
-            prefs.remove(getProfileKey(CONNECTION_PASSWORD_LOCAL, profile))
-            prefs.remove(getProfileKey(CONNECTION_PASSWORD, profile))
-            prefs.remove(getProfileKey(CONNECTION_PASSWORD_ENCRYPTED, profile))
+            if (!hasConnection) {
+                prefs.remove(getProfileKey(CONNECTION_PASSWORD_LOCAL, profile))
+                prefs.remove(getProfileKey(CONNECTION_PASSWORD, profile))
+                prefs.remove(getProfileKey(CONNECTION_PASSWORD_ENCRYPTED, profile))
+            }
         }
     }
 
-    suspend fun saveSshKeys(privateKey: String, keyPassphrase: String, certificate: String) {
+    suspend fun saveSshKeys(privateKey: String, keyPassphrase: String, certificate: String, forProfile: Int? = null) {
         dataStore.edit { prefs ->
-            val profile = prefs[ACTIVE_PROFILE] ?: 0
+            val profile = forProfile ?: prefs[ACTIVE_PROFILE] ?: 0
             prefs.putSecret(SSH_PRIVATE_KEY_ENCRYPTED, SSH_PRIVATE_KEY, privateKey, profile)
             prefs.putSecret(SSH_KEY_PASSPHRASE_ENCRYPTED, SSH_KEY_PASSPHRASE, keyPassphrase, profile)
             prefs.putSecret(SSH_CERTIFICATE_ENCRYPTED, SSH_CERTIFICATE, certificate, profile)
+        }
+    }
+
+    /** One VPS draft, written to its explicit slot; never writes connection worker settings. */
+    internal suspend fun saveDeployProfileDraft(draft: DeploySettingsSnapshot) {
+        require(draft.profile in CsqttConstants.Profiles.MIN_INDEX..CsqttConstants.Profiles.MAX_INDEX)
+        require(draft.serverPeerPort in 1..65535 && draft.serverWebPort in 1..65535 && draft.sshPort.toIntOrNull() in 1..65535)
+        val profile = draft.profile
+        dataStore.edit { prefs ->
+            if (prefs[getProfileKey(DEPLOY_IP, profile)] != draft.ip.trim()) {
+                prefs[getProfileKey(DEPLOY_SERVER_CONFIGURED, profile)] = false
+                prefs.remove(getProfileKey(DEPLOY_LAST_INSPECTION_AT, profile))
+                prefs.remove(getProfileKey(DEPLOY_LAST_INSPECTION_OK, profile))
+                prefs.remove(getProfileKey(DEPLOY_LAST_INSPECTION_ARCH, profile))
+                prefs.remove(getProfileKey(DEPLOY_LAST_INSPECTION_SERVICE, profile))
+                prefs.remove(getProfileKey(DEPLOY_LAST_INSPECTION_VERSION, profile))
+                prefs.remove(getProfileKey(DEPLOY_LAST_INSPECTION_MESSAGE, profile))
+                prefs.remove(getProfileKey(DEPLOY_LAST_INSPECTION_PANEL, profile))
+            }
+            prefs[getProfileKey(DEPLOY_IP, profile)] = draft.ip.trim()
+            prefs[getProfileKey(DEPLOY_SERVER_NAME, profile)] = draft.serverName.trim()
+            prefs[getProfileKey(DEPLOY_LOGIN, profile)] = draft.sshLogin.trim()
+            prefs.putSecret(DEPLOY_PASSWORD_ENCRYPTED, DEPLOY_PASSWORD, draft.sshPassword, profile)
+            prefs.putSecret(DEPLOY_MAIN_PASSWORD_ENCRYPTED, DEPLOY_MAIN_PASSWORD, draft.mainPassword, profile)
+            prefs[getProfileKey(DEPLOY_WEB_LOGIN, profile)] = draft.webLogin
+            prefs.putSecret(DEPLOY_WEB_PASSWORD_ENCRYPTED, DEPLOY_WEB_PASSWORD, draft.webPassword, profile)
+            prefs[getProfileKey(DEPLOY_SSH_PORT, profile)] = draft.sshPort
+            prefs[getProfileKey(SERVER_PEER_PORT, profile)] = draft.serverPeerPort
+            prefs[getProfileKey(SERVER_WEB_PORT, profile)] = draft.serverWebPort
+            prefs[getProfileKey(MANUAL_PORTS_ENABLED, profile)] = true
+            prefs[getProfileKey(SSH_KEYS_MODE, profile)] = draft.sshKeysMode
+            prefs[getProfileKey(DOCKER_INSTALL, profile)] = draft.dockerInstall
         }
     }
 

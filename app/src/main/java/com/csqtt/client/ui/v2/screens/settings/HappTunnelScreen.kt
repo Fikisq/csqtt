@@ -93,9 +93,8 @@ fun HappTunnelScreen(settingsStore: SettingsStore, version: String, onSettings: 
     val green = c.success
     val orange = c.warning
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        V2TopBar(version = version, onSettings = onSettings)
+        V2TopBar(version = version, title = "Туннель", onSettings = onSettings)
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Туннель", style = MaterialTheme.typography.titleLarge, color = c.textPrimary)
             V2Card(onClick = { picker = true }, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 9.dp), borderColor = c.outline) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) { Text(names[profile] ?: defaultProfileName(profile), fontSize = 14.sp); Text("$host:$port", color = c.textSecondary, fontSize = 11.sp) }
@@ -128,9 +127,8 @@ fun HappTunnelScreen(settingsStore: SettingsStore, version: String, onSettings: 
                     HappHelp("Потоки", "Число параллельных TURN-потоков. Настройка относится к текущему профилю.")
                     Surface(color = c.accentSoft, shape = RoundedCornerShape(10.dp)) { Text(effectiveWorkers.toString(), color = c.accent, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) }
                 }
-                Slider(workers.coerceIn(10, workerMaximum).toFloat(), { workers = WorkerCountPolicy.normalize(it.roundToInt(), workerMaximum) },
-                    valueRange = 10f..workerMaximum.toFloat(), steps = workerMaximum / 10 - 2,
-                    enabled = !busy, modifier = Modifier.fillMaxWidth().height(28.dp))
+                V2PowerSlider(effectiveWorkers.toFloat(), maximum = workerMaximum.toFloat(), enabled = !busy,
+                    onValueChange = { workers = WorkerCountPolicy.normalize(it.roundToInt(), workerMaximum) }, showHeader = false)
                 HappActionRow("TURN подсети", subnet.ifBlank { "Автоматически" }, { showSubnets = true })
             }
             Spacer(Modifier.height(4.dp))

@@ -55,6 +55,10 @@ internal fun HappServerList(store: SettingsStore, active: Int, busy: Boolean, on
             TextButton(onClick = { if(checkJob?.isActive == true) checkJob?.cancel() else ping(occupied.sorted()) }, enabled = occupied.isNotEmpty() && (!busy || checkJob?.isActive == true)) { Text(if(checkJob?.isActive == true) "Отмена" else "Пинг") }
         }
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            if(occupied.isEmpty()) Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 40.dp), contentAlignment = Alignment.Center) {
+                Text("Серверы пока не добавлены.\nНажмите +, чтобы добавить сервер.", color = c.textSecondary, fontSize = 13.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
             occupied.sorted().forEach { id ->
                 val core = servers.firstOrNull { it.profile == id }?.installedVersion?.takeIf(String::isNotBlank)?.let { "CSQTT $it" } ?: "CSQTT"
                 Surface(color = if(active == id) c.accentSoft else c.surface, shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp,c.outline),

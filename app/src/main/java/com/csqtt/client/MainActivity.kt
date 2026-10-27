@@ -352,7 +352,7 @@ fun MainScreen(
         initialValue = DEFAULT_UPDATE_CHECK_INTERVAL_HOURS
     )
     var pendingRelease by remember { mutableStateOf<AppReleaseInfo?>(null) }
-    val currentVersion = remember { "v${BuildConfig.VERSION_NAME.removePrefix("v")}" }
+    val currentVersion = remember { "v${BuildConfig.VERSION_NAME.removePrefix("v").substringBefore('-')}" }
     val safeBottomInset = with(density) { WindowInsets.safeDrawing.getBottom(density).toDp() }
     val navToolbarHeight = 66.dp
     val navToolbarBottomMargin = 10.dp

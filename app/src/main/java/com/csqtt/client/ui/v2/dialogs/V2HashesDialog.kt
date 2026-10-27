@@ -170,7 +170,7 @@ fun V2HashesDialog(
                                     enabled = !isChecking, singleLine = true, modifier = Modifier.weight(1f),
                                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.textPrimary, fontSize = 13.sp, fontFamily = FontFamily.Monospace),
                                     decorationBox = { input -> Box(contentAlignment = Alignment.CenterStart) {
-                                        if (value.isEmpty()) Text("Хеш ${index + 1}", color = colors.textMuted, fontSize = 13.sp)
+                                        if (value.isEmpty()) Text("Ссылка VK или хеш · от 16 знаков", color = colors.textMuted, fontSize = 12.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                         input()
                                     } },
                                 )

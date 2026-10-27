@@ -104,8 +104,8 @@ fun CsqttV2Root(
         var showVersionSheet by rememberSaveable { mutableStateOf(false) }
         var showResourceSheet by rememberSaveable { mutableStateOf(false) }
         var floatingHudEnabled by rememberSaveable { mutableStateOf(false) }
-        val version = remember { "V ${BuildConfig.VERSION_NAME.removePrefix("v")}" }
-        val currentVersion = remember { "v${BuildConfig.VERSION_NAME.removePrefix("v")}" }
+        val version = remember { "V ${BuildConfig.VERSION_NAME.removePrefix("v").substringBefore('-')}" }
+        val currentVersion = remember { "v${BuildConfig.VERSION_NAME.removePrefix("v").substringBefore('-')}" }
         val selectedTab = remember(tabs, selectedTabName) {
             tabs.firstOrNull { it.name == selectedTabName } ?: tabs.first()
         }

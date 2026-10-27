@@ -7,6 +7,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.sp
+import com.csqtt.client.ui.v2.design.V2Theme
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.csqtt.client.SettingsStore
 import com.csqtt.client.ui.v2.components.*
@@ -29,8 +33,20 @@ fun HappSettingsScreen(settingsStore: SettingsStore, version: String, onBack: ()
             V2Card {
                 Text("CSQTTR", style = MaterialTheme.typography.titleLarge)
                 Text(version, style = MaterialTheme.typography.bodySmall)
-                HappChoice("Режим приложения", if(owner) "Владелец" else "Участник", listOf("Участник", "Владелец"), { scope.launch { settingsStore.saveUiOwnerMode(it == "Владелец") } },
-                    help = "Участник подключается по профилю. Владелец дополнительно видит вкладку «Деплой». По умолчанию выбран участник.")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Режим приложения", Modifier.weight(1f))
+                    HappHelp("Режим приложения", "Участник подключается по профилю. Владелец дополнительно видит вкладку «Деплой». По умолчанию выбран участник.")
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(false to "Участник", true to "Владелец").forEach { (value, label) ->
+                        Surface(onClick = { scope.launch { settingsStore.saveUiOwnerMode(value) } }, modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp), color = if(owner == value) V2Theme.colors.accentSoft else V2Theme.colors.field) {
+                            Box(Modifier.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                                Text(label, fontSize = 14.sp, color = if(owner == value) V2Theme.colors.accent else V2Theme.colors.textSecondary)
+                            }
+                        }
+                    }
+                }
             }
             V2Card(contentPadding = PaddingValues(12.dp)) {
                 V2SwitchSetting("Экстра потоки", extra, { scope.launch { settingsStore.saveExtraWorkers(it) } })

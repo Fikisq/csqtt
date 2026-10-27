@@ -40,18 +40,17 @@ fun V2TopBar(
 ) {
     val colors = V2Theme.colors
     androidx.compose.foundation.layout.Column(modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().height(if(title == null) 64.dp else 56.dp), verticalAlignment = Alignment.CenterVertically) {
             if (onBack != null) V2BackButton(onClick = onBack)
             androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
-                Text("CSQTTR", color = colors.accent, fontWeight = FontWeight.Bold, fontSize = 25.sp)
-                version?.let { Text(it.substringBefore('-'), color = colors.textSecondary, fontSize = 11.sp) }
+                Text(title ?: "CSQTTR", color = if(title == null) colors.accent else colors.textPrimary, fontWeight = FontWeight.Bold, fontSize = if(title == null) 25.sp else 22.sp)
+                if(title == null) version?.let { Text(it.substringBefore('-'), color = colors.textSecondary, fontSize = 11.sp) }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 actions()
                 if (onSettings != null) V2CircleIconButton(iconPainter = painterResource(R.drawable.ic_v2_settings), contentDescription = "Настройки", onClick = onSettings)
             }
         }
-        if (title != null) Text(title, color = colors.textPrimary, fontSize = 22.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(bottom = 8.dp))
     }
 }
 

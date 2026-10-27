@@ -381,7 +381,7 @@ fun V2ConnectionScreen(
                 color = if(activeVisual) colors.accent else colors.flower,
                 border = androidx.compose.foundation.BorderStroke(2.dp, colors.accent.copy(alpha = 0.65f)), modifier = Modifier.size(172.dp)) {
                 Column(verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    val buttonText = if(colors.background.luminance() < 0.5f || activeVisual) androidx.compose.ui.graphics.Color.White else colors.onContrast
+                    val buttonText = colors.onAccent
                     Icon(androidx.compose.material.icons.Icons.Outlined.PowerSettingsNew, if(activeVisual) "Отключить" else "Подключить", tint = buttonText, modifier = Modifier.size(56.dp))
                     Text(when { profileChecking -> "Проверка…"; tunnelStopping -> "Остановка…"; isStarting -> "Подключение…"; autoPausedForWifi -> "Пауза Wi-Fi"; tunnelRunning -> "Подключено"; else -> "Отключено" },
                         fontSize = 13.sp, color = buttonText, modifier = Modifier.padding(top = 10.dp))
