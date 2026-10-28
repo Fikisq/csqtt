@@ -34,12 +34,12 @@ import com.csqtt.client.ui.v2.design.V2Theme
 @Composable
 internal fun HappField(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier,
     password: Boolean = false, number: Boolean = false, enabled: Boolean = true,
-    placeholder: String = fieldFormatHint(label)) {
+    placeholder: String = fieldFormatHint(label), compact: Boolean = false) {
     val c = V2Theme.colors
     var showPassword by rememberSaveable(label) { mutableStateOf(false) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(label, color = c.textSecondary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        BasicTextField(value, onChange, modifier = Modifier.fillMaxWidth().height(44.dp).semantics { contentDescription = label },
+        BasicTextField(value, onChange, modifier = Modifier.fillMaxWidth().height(if (compact) 38.dp else 44.dp).semantics { contentDescription = label },
             singleLine = true, enabled = enabled,
             textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, color = c.textPrimary),
             visualTransformation = if (password && !showPassword) PasswordVisualTransformation() else VisualTransformation.None,
@@ -96,10 +96,10 @@ internal fun HappHelp(title: String, text: String) {
 
 @Composable
 internal fun HappChoice(label: String, value: String, options: List<String>, onSelect: (String) -> Unit,
-    modifier: Modifier = Modifier, tone: Color? = null, help: String? = null, enabled: Boolean = true) {
+    modifier: Modifier = Modifier, tone: Color? = null, help: String? = null, enabled: Boolean = true, compact: Boolean = false) {
     val c = V2Theme.colors
     var expanded by remember { mutableStateOf(false) }
-    Row(modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.fillMaxWidth().heightIn(min = if (compact) 40.dp else 48.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, modifier = Modifier.weight(1f), color = c.textPrimary, fontSize = 13.sp)
         if (help != null) HappHelp(label, help)
         Box(Modifier.widthIn(min = 128.dp, max = 158.dp)) {
@@ -121,9 +121,9 @@ internal fun HappChoice(label: String, value: String, options: List<String>, onS
 }
 
 @Composable
-internal fun HappActionRow(title: String, detail: String = "", onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun HappActionRow(title: String, detail: String = "", onClick: () -> Unit, modifier: Modifier = Modifier, compact: Boolean = false) {
     val c = V2Theme.colors
-    Row(modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.fillMaxWidth().heightIn(min = if (compact) 40.dp else 48.dp).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
         Text(title, modifier = Modifier.weight(1f), fontSize = 13.sp, color = c.textPrimary)
         Text(detail, color = c.textSecondary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 150.dp))
         Text(" ›", color = c.textSecondary, fontSize = 22.sp)

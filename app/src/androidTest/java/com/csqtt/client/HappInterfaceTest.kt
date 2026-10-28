@@ -113,7 +113,17 @@ class HappInterfaceTest {
             store.saveCaptchaSettings("auto", "auto", forProfile = 26)
         }
         compose.onNodeWithText("Туннель").performClick()
-        compose.onNodeWithText("Настройки капчи").performScrollTo().performClick()
+        for (theme in listOf("dark", "light")) {
+            runBlocking { store.saveThemeMode(theme) }
+            compose.waitForIdle()
+            listOf("Адрес сервера", "Пароль туннеля", "Режим хешей", "Режим кредов", "Настройки капчи", "Режим SRTP", "Транспорт", "Потоки", "TURN подсети")
+                .forEach { compose.onNodeWithText(it).assertIsDisplayed() }
+            val range = compose.onNodeWithTag("tunnel-settings").fetchSemanticsNode().config[
+                androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange]
+            screenshot("review8-tunnel-$theme.png")
+            check(range.maxValue() == 0f) { "Tunnel settings need scrolling: ${range.maxValue()}" }
+        }
+        compose.onNodeWithText("Настройки капчи").assertIsDisplayed().performClick()
         compose.waitUntil(5000) { compose.onAllNodesWithText("WBV").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("WBV").performClick()
         compose.onNodeWithText("RJS").performClick()
