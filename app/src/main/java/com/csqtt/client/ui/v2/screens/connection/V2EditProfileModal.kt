@@ -42,6 +42,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.csqtt.client.WorkerCountPolicy
 import com.csqtt.client.CsqttConstants
 import com.csqtt.client.SettingsStore
 import kotlinx.coroutines.flow.first
@@ -60,7 +61,6 @@ import com.csqtt.client.ui.v2.design.V2Theme
 import com.csqtt.client.ui.v2.dialogs.V2WorkersInfoDialog
 import kotlinx.coroutines.launch
 
-private val CONNECTION_PASSWORD_REGEX = Regex("^[a-zA-Z0-9_.!?:#/-]+$")
 
 /**
  * Profile editor dialog, styled to the unified V2 design system.
@@ -156,7 +156,7 @@ fun V2EditProfileModal(
 
             peerError = host.isBlank()
             portError = port == null || port !in 1..65535
-            passwordError = !password.matches(CONNECTION_PASSWORD_REGEX)
+            passwordError = !com.csqtt.client.ui.legacy.utils.isValidTunnelPassword(password)
 
             if (peerError || portError || passwordError) return
 
@@ -195,7 +195,7 @@ fun V2EditProfileModal(
 
             peerError = peer.isBlank()
             portError = port == null || port !in 1..65535
-            passwordError = !password.matches(CONNECTION_PASSWORD_REGEX)
+            passwordError = !com.csqtt.client.ui.legacy.utils.isValidTunnelPassword(password)
 
             if (peerError || portError || passwordError) return
 

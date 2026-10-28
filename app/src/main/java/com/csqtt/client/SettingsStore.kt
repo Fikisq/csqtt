@@ -183,6 +183,8 @@ class SettingsStore(context: Context, deployScope: Boolean = false, readOnlyProf
         private val INFO_PROJECT_EXPANDED = booleanPreferencesKey("info_project_expanded")
         private val CSQTT_LINK = stringPreferencesKey("csqtt_link")
         private val CSQTT_LINK_MODE = booleanPreferencesKey("csqtt_link_mode")
+        // the owner's link hashes a participant took out of the connection (per profile, comma-separated)
+        private val LINK_HASHES_REMOVED = stringPreferencesKey("link_hashes_removed")
         private val PARTICIPANT_SHOW_LOGS = booleanPreferencesKey("participant_show_logs")
         private val SUBSCRIPTION_URL = stringPreferencesKey("subscription_url")
         private val SUBSCRIPTION_TITLE = stringPreferencesKey("subscription_title")
@@ -211,6 +213,7 @@ class SettingsStore(context: Context, deployScope: Boolean = false, readOnlyProf
         private val DEPLOY_IP = stringPreferencesKey("deploy_ip")
         private val DEPLOY_SERVER_NAME = stringPreferencesKey("deploy_server_name")
         private val DEPLOY_PROFILE_NAMES_CLEANED = booleanPreferencesKey("deploy_profile_names_cleaned_v2")
+        private val DEFAULT_ROLE_DECIDED = booleanPreferencesKey("default_role_decided")
         private val DEPLOY_LOGIN = stringPreferencesKey("deploy_login")
         private val DEPLOY_PASSWORD = stringPreferencesKey("deploy_password")
         private val DEPLOY_PASSWORD_ENCRYPTED = stringPreferencesKey("deploy_password_encrypted")
@@ -469,16 +472,21 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(SECONDARY_VK_HASH, profile)] ?: ""
     }
-    val workersPerHash: Flow<Int> = dataStore.data.map { prefs ->
+    /** The most workers the active profile may use: «Экстра потоки» lifts 70 to 100, a subscription can lower it. */
+    private fun workersMaximum(prefs: Preferences): Int {
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         val isExtra = prefs[getProfileKey(EXTRA_WORKERS, profile)] ?: false
         val defaultMax = WorkerCountPolicy.defaultMaximum(isExtra)
-        val max = prefs[getProfileKey(SUBSCRIPTION_POWER, profile)]
+        return prefs[getProfileKey(SUBSCRIPTION_POWER, profile)]
             ?.takeIf { it in 10..100 }
             ?.coerceAtMost(defaultMax)
             ?: defaultMax
+    }
+    val workersMaximum: Flow<Int> = dataStore.data.map { prefs -> workersMaximum(prefs) }
+    val workersPerHash: Flow<Int> = dataStore.data.map { prefs ->
+        val profile = prefs[ACTIVE_PROFILE] ?: 0
         val current = prefs[getProfileKey(WORKERS_PER_HASH, profile)] ?: 18
-        WorkerCountPolicy.normalize(current, maximum = max)
+        WorkerCountPolicy.normalize(current, maximum = workersMaximum(prefs))
     }
     val protocol: Flow<String> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
@@ -881,6 +889,18 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
             }
             prefs[getProfileKey(PEER, profile)] = peer.trim()
             prefs[getProfileKey(SERVER_PEER_PORT, profile)] = serverPeerPort.coerceIn(1, 65535)
+            if (prefs[getProfileKey(CSQTT_LINK_MODE, profile)] == true) {
+                val link = com.csqtt.client.ui.legacy.utils.parseCsqttLink(
+                    prefs[getProfileKey(CSQTT_LINK, profile)].orEmpty(),
+                )
+                if (link != null) {
+                    prefs[getProfileKey(CSQTT_LINK, profile)] = com.csqtt.client.ui.legacy.utils.formatCsqttLink(
+                        host = peer.trim(), peer = serverPeerPort.coerceIn(1, 65535),
+                        password = connectionPassword, hashes = link.hashes,
+                        token = link.vkAccessToken, power = link.power,
+                    )
+                }
+            }
             if (serverPeerPort != CsqttConstants.Network.DEFAULT_SERVER_PEER_PORT) prefs[getProfileKey(MANUAL_PORTS_ENABLED, profile)] = true
             prefs[getProfileKey(WORKERS_PER_HASH, profile)] =
                 WorkerCountPolicy.normalize(workersPerHash)
@@ -900,6 +920,7 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
     suspend fun saveProfileParticipantLink(profile: Int, link: String) {
         dataStore.edit { prefs ->
             prefs[getProfileKey(CSQTT_LINK, profile)] = link.trim()
+            prefs.remove(getProfileKey(LINK_HASHES_REMOVED, profile))
         }
     }
 
@@ -911,12 +932,13 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
 
     /**
      * Materializes an imported csqtt:// link into profile fields: peer/port, tunnel password,
-     * VK hashes or token, worker limit and name. Participant mode is disabled and the raw link
-     * plus subscription metadata are removed so the profile connects as a regular owner profile.
+     * VK token, worker limit and name. Hash links keep their participant source separately so
+     * owner hashes remain hidden; links without hashes use the materialized connection fields.
      */
-    internal suspend fun saveImportedConnection(profile: Int, imported: ImportedConnectionSettings) {
+    /** False, and nothing written, without a host, a valid port or a tunnel password. */
+    internal suspend fun saveImportedConnection(profile: Int, imported: ImportedConnectionSettings, participantLink: String? = null): Boolean {
         val host = imported.host.trim().removePrefix("[").removeSuffix("]")
-        if (host.isEmpty() || imported.port !in 1..65535 || imported.password.isBlank()) return
+        if (host.isEmpty() || imported.port !in 1..65535 || imported.password.isBlank()) return false
         dataStore.edit { prefs ->
             prefs[getProfileKey(PROFILE_REMOVED, profile)] = false
             prefs[getProfileKey(PROFILE_REVISION, profile)] = (prefs[getProfileKey(PROFILE_REVISION, profile)] ?: 0L) + 1L
@@ -930,8 +952,10 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
             prefs.remove(getProfileKey(CONNECTION_PASSWORD, profile))
             prefs.remove(getProfileKey(CONNECTION_PASSWORD_ENCRYPTED, profile))
 
-            prefs[getProfileKey(CSQTT_LINK_MODE, profile)] = false
-            prefs.remove(getProfileKey(CSQTT_LINK, profile))
+            prefs[getProfileKey(CSQTT_LINK_MODE, profile)] = participantLink != null
+            if (participantLink != null) prefs[getProfileKey(CSQTT_LINK, profile)] = participantLink
+            else prefs.remove(getProfileKey(CSQTT_LINK, profile))
+            prefs.remove(getProfileKey(LINK_HASHES_REMOVED, profile))
             prefs.remove(getProfileKey(SUBSCRIPTION_URL, profile))
             prefs.remove(getProfileKey(SUBSCRIPTION_TITLE, profile))
             prefs.remove(getProfileKey(SUBSCRIPTION_UUID, profile))
@@ -949,7 +973,7 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
                 .filter { it.isNotEmpty() }
                 .distinct()
             if (hashes.isNotEmpty()) {
-                prefs[getProfileKey(VK_HASHES, profile)] = hashes.joinToString(",")
+                prefs[getProfileKey(VK_HASHES, profile)] = if (participantLink == null) hashes.joinToString(",") else ""
                 prefs[getProfileKey(VK_HASH_MODE, profile)] = CsqttConstants.VkAutoHash.MODE_MANUAL
                 prefs[getProfileKey(VK_AUTH_MODE, profile)] = CsqttConstants.VkAuth.MODE_CALLS
             }
@@ -968,6 +992,7 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
                 prefs[getProfileKey(PROFILE_NAME, profile)] = name
             }
         }
+        return true
     }
 
     suspend fun saveProfileWorkersPerHash(profile: Int, workersPerHash: Int) {
@@ -1080,7 +1105,7 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
             listOf(
                 PROFILE_NAME, PEER, SERVER_PEER_PORT, WORKERS_PER_HASH,
                 CONNECTION_PASSWORD, CONNECTION_PASSWORD_ENCRYPTED, CONNECTION_PASSWORD_LOCAL,
-                CSQTT_LINK, CSQTT_LINK_MODE, SUBSCRIPTION_URL, SUBSCRIPTION_TITLE,
+                CSQTT_LINK, CSQTT_LINK_MODE, LINK_HASHES_REMOVED, SUBSCRIPTION_URL, SUBSCRIPTION_TITLE,
                 SUBSCRIPTION_UUID, SUBSCRIPTION_NODE, SUBSCRIPTION_POWER,
             ).forEach { key -> prefs.remove(getProfileKey(key, profile)) }
             val active = prefs[ACTIVE_PROFILE] ?: CsqttConstants.Profiles.MIN_INDEX
@@ -1234,6 +1259,22 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
         }
     }
 
+    val linkHashesRemoved: Flow<Set<String>> = dataStore.data.map { prefs ->
+        val profile = prefs[ACTIVE_PROFILE] ?: 0
+        (prefs[getProfileKey(LINK_HASHES_REMOVED, profile)] ?: "").split(",").filter(String::isNotBlank).toSet()
+    }
+
+    suspend fun saveLinkHashesRemoved(removed: Set<String>, forProfile: Int? = null) {
+        dataStore.edit { prefs ->
+            val profile = forProfile ?: (prefs[ACTIVE_PROFILE] ?: 0)
+            if (removed.isEmpty()) {
+                prefs.remove(getProfileKey(LINK_HASHES_REMOVED, profile))
+            } else {
+                prefs[getProfileKey(LINK_HASHES_REMOVED, profile)] = removed.joinToString(",")
+            }
+        }
+    }
+
     val extraWorkers: Flow<Boolean> = dataStore.data.map { prefs ->
         val profile = prefs[ACTIVE_PROFILE] ?: 0
         prefs[getProfileKey(EXTRA_WORKERS, profile)] ?: false
@@ -1287,6 +1328,7 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
     init {
         if (readOnlyProfile == null && migrationsStarted.compareAndSet(false, true)) {
             CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                migrateDefaultRole()
                 migrateConnectionPasswordsToLocalStorage()
                 migrateSecretsToKeystore()
                 migrateLegacyWhitelistMode()
@@ -1337,6 +1379,7 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
             prefs[THEME_MODE] = mode
         }
     }
+
 
     suspend fun saveDynamicColor(enabled: Boolean) {
         dataStore.edit { prefs ->
@@ -1518,6 +1561,8 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
             val profile = prefs[ACTIVE_PROFILE] ?: 0
             prefs[getProfileKey(CSQTT_LINK, profile)] = link
             prefs[getProfileKey(CSQTT_LINK_MODE, profile)] = true
+            // a new link from the owner (QR, csqtt:// link) starts with all of its hashes in use
+            prefs.remove(getProfileKey(LINK_HASHES_REMOVED, profile))
         }
     }
 
@@ -1571,8 +1616,8 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
         dataStore.edit { prefs ->
             val profile = prefs[ACTIVE_PROFILE] ?: 0
             prefs[getProfileKey(MANUAL_PORTS_ENABLED, profile)] = enabled
+            // The SSH port is the server's own setting, not one of the manual ports: it stays as saved.
             if (!enabled) {
-                // SSH is an existing VPS connection setting, not a CSQTT service port.
                 prefs[getProfileKey(SERVER_PEER_PORT, profile)] = CsqttConstants.Network.DEFAULT_SERVER_PEER_PORT
                 prefs[getProfileKey(SERVER_WEB_PORT, profile)] = CsqttConstants.Network.DEFAULT_SERVER_WEB_PORT
             }
@@ -2097,6 +2142,8 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
         }
     }
 
+
+
     suspend fun markBatteryOptimizationPromptHandled() {
         dataStore.edit { prefs ->
             prefs[BATTERY_OPTIMIZATION_PROMPT_HANDLED] = true
@@ -2321,6 +2368,28 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
      * deploy-only profiles show up as named owner profiles. Move that name to its own
      * deploy key and clear the connection profile name for server-only slots.
      */
+    /**
+     * A fresh install starts as «Участник»: most people get a link or a QR code, not a server. Decided once, by what is
+     * stored rather than by what was written first (other startup code writes settings at the same time): an install
+     * that holds a connection, a link, a subscription, hashes, a deployed server or a chosen role keeps its role.
+     */
+    private suspend fun migrateDefaultRole() {
+        dataStore.edit { prefs ->
+            if (prefs[DEFAULT_ROLE_DECIDED] == true) return@edit
+            prefs[DEFAULT_ROLE_DECIDED] = true
+            val configured = (CsqttConstants.Profiles.MIN_INDEX..CsqttConstants.Profiles.MAX_INDEX).any { profile ->
+                listOf(PEER, CSQTT_LINK, SUBSCRIPTION_URL, VK_HASHES, DEPLOY_IP, CONNECTION_PASSWORD,
+                    CONNECTION_PASSWORD_ENCRYPTED, CONNECTION_PASSWORD_LOCAL)
+                    .any { !prefs[getProfileKey(it, profile)].isNullOrBlank() } ||
+                    prefs[getProfileKey(CSQTT_LINK_MODE, profile)] != null
+            }
+            if (prefs[UI_OWNER_MODE] == null) {
+                prefs[UI_OWNER_MODE] = configured &&
+                    prefs[getProfileKey(CSQTT_LINK_MODE, prefs[ACTIVE_PROFILE] ?: 0)] != true
+            }
+        }
+    }
+
     private suspend fun migrateDeployServerNames() {
         val current = dataStore.data.first()
         if (current[DEPLOY_PROFILE_NAMES_CLEANED] == true) return

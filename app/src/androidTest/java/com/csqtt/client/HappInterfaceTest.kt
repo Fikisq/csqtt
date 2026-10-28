@@ -142,7 +142,9 @@ class HappInterfaceTest {
             val saved = store.readProfileConnectionSettings(1)
             check(saved.connectionPassword == "LinkPassword123")
             check(saved.workersPerHash == 30)
-            check(store.vkHashes.first() == hashes.joinToString(","))
+            check(store.vkHashes.first().isBlank())
+            check(store.csqttLinkMode.first())
+            check(resolveConnectionSource(store)?.hashes == hashes.joinToString(","))
             check(store.vkHashMode.first() == "manual")
         }
         compose.onNodeWithText("Подкл.").performClick()
@@ -151,6 +153,34 @@ class HappInterfaceTest {
         compose.waitUntil(5000) { compose.onAllNodesWithText("203.0.113.10").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("203.0.113.10").assertIsDisplayed()
         runBlocking { check(store.readProfileConnectionSettings(0).connectionPassword == "DemoPassword1234") }
+    }
+
+    @Test fun importedOwnerHashesStayHiddenAndCombineWithParticipantHashes() {
+        val owner = "owner-private-hash-1234567890"
+        val own = "participant-own-hash-1234567890"
+        runBlocking {
+            check(store.saveImportedLink(27, formatCsqttLink("203.0.113.127", 46127, "FixturePassword", hashes = listOf(owner)), "Owner hash fixture"))
+            store.saveActiveProfile(27)
+            store.saveVkHashesOnly(own)
+        }
+        compose.onNodeWithText("Туннель").performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithText("Настроить хеши").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Настроить хеши").performClick()
+        compose.onNodeWithText(owner).assertDoesNotExist()
+        compose.onNodeWithText("От владельца 1").assertExists()
+        compose.onNodeWithText(own).assertExists()
+        compose.onNodeWithContentDescription("Убрать хеш владельца 1").performClick()
+        compose.waitUntil(5000) { runBlocking { owner in store.linkHashesRemoved.first() } }
+        runBlocking {
+            check(resolveConnectionSource(store)?.hashes == own)
+            store.saveProfileConnectionSettings(27, "203.0.113.128", 46128, "ChangedPassword", 20)
+            val source = checkNotNull(resolveConnectionSource(store))
+            check(source.peer == "203.0.113.128:46128")
+            check(source.password == "ChangedPassword")
+            check(source.hashes == own)
+        }
+        compose.onNodeWithContentDescription("Закрыть").performClick()
+        runBlocking { store.clearProfile(27); store.saveActiveProfile(0) }
     }
 
     @Test fun selectingTokenLinkUsesItsOwnVkAccountInTunnel() {

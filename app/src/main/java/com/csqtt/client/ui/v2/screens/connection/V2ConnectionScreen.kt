@@ -214,7 +214,9 @@ fun V2ConnectionScreen(
     val parsedLink = remember(tunnelAuthSettings.csqttLink) {
         parseCsqttLink(tunnelAuthSettings.csqttLink)
     }
-    val linkHashes = parsedLink?.hashes.orEmpty()
+    val linkHashesRemoved by settingsStore.linkHashesRemoved.collectAsStateWithLifecycle(initialValue = emptySet())
+    // the owner's hashes still in use: the ones the participant took out do not count
+    val linkHashes = parsedLink?.hashes.orEmpty().filterNot { it in linkHashesRemoved }
     val linkTokenActive = csqttLinkMode && !parsedLink?.vkAccessToken.isNullOrEmpty()
 
     val rawManualHashes = remember(vkHashes) {
@@ -230,7 +232,7 @@ fun V2ConnectionScreen(
     val autoOrInteractive = accountAutoJsMode || (savedHashMode != null && savedHashMode != "manual")
     val hashesReady = savedVkAccessToken?.isNotBlank() == true
     val readyVkCredentials = hashSettingsLoaded && ConnectionStartPolicy.hasReadyVkCredentials(
-        autoOrInteractive,
+        csqttLinkMode,
         linkHashes.size,
         linkTokenActive,
         autoOrInteractive,
@@ -441,8 +443,10 @@ fun V2ConnectionScreen(
                     context.showRaisedToast("Нет свободных профилей", Toast.LENGTH_SHORT)
                     return@launch
                 }
-                settingsStore.saveImportedLink(slot, text)
-                if (!tunnelBusy) settingsStore.saveActiveProfile(slot)
+                if (!settingsStore.saveImportedLink(slot, text)) {
+                    context.showRaisedToast(IMPORT_NO_PASSWORD, Toast.LENGTH_SHORT)
+                    return@launch
+                }
                 context.showRaisedToast(
                     "Добавлен профиль: ${parsed.host}",
                     Toast.LENGTH_SHORT,
@@ -501,8 +505,10 @@ fun V2ConnectionScreen(
                             context.showRaisedToast("Нет свободных профилей", Toast.LENGTH_SHORT)
                             return@launch
                         }
-                        settingsStore.saveImportedLink(slot, text)
-                if (!tunnelBusy) settingsStore.saveActiveProfile(slot)
+                        if (!settingsStore.saveImportedLink(slot, text)) {
+                            context.showRaisedToast(IMPORT_NO_PASSWORD, Toast.LENGTH_SHORT)
+                            return@launch
+                        }
                         context.showRaisedToast(
                             "Добавлен профиль из QR: ${parsed.host}",
                             Toast.LENGTH_SHORT,

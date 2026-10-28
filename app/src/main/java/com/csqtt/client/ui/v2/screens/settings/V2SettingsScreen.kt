@@ -171,6 +171,13 @@ fun V2SettingsScreen(
     var showTurnTransportGeneralDialog by rememberSaveable { mutableStateOf(false) }
     var showTurnTransportDetailDialog by rememberSaveable { mutableStateOf<String?>(null) }
     var showAutoPauseInfoDialog by rememberSaveable { mutableStateOf(false) }
+    var showBatterySaverInfoDialog by rememberSaveable { mutableStateOf(false) }
+    val batterySaverMode by settingsStore.batterySaverMode.collectAsStateWithLifecycle(
+        initialValue = com.csqtt.client.BatterySaver.DEFAULT_MODE,
+    )
+    val batterySaverPercent by settingsStore.batterySaverPercent.collectAsStateWithLifecycle(
+        initialValue = com.csqtt.client.BatterySaver.DEFAULT_PERCENT,
+    )
     var showExtraWorkersInfoDialog by rememberSaveable { mutableStateOf(false) }
     var showTurnSubnetsDialog by rememberSaveable { mutableStateOf(false) }
     var showAutoJsRiskDialog by remember { mutableStateOf(false) }
@@ -208,6 +215,7 @@ fun V2SettingsScreen(
         com.csqtt.client.ui.legacy.utils.parseCsqttLink(tunnelAuthSettings.csqttLink)
     }
     val linkHashes = parsedCsqttLink?.hashes.orEmpty()
+    val linkHashesRemoved by settingsStore.linkHashesRemoved.collectAsStateWithLifecycle(initialValue = emptySet())
     val linkVkAccessToken = parsedCsqttLink?.vkAccessToken.orEmpty()
     val linkTokenActive = participantMode && linkVkAccessToken.isNotEmpty()
 
@@ -394,7 +402,12 @@ fun V2SettingsScreen(
 
             if (participantMode) {
                 if (linkHashes.isNotEmpty()) {
-                    V2SettingRow(title = "VK хеши получены: ${linkHashes.size}")
+                    // the owner's hashes (never shown) plus the participant's own, edited in one sheet
+                    V2ActionSetting(
+                        title = "VK хеши",
+                        action = "От владельца: ${linkHashes.count { it !in linkHashesRemoved }} · свои: $filledHashCount",
+                        onAction = { showHashesDialog = true },
+                    )
                 } else if (linkTokenActive) {
                     V2SettingRow(title = "VK токен активен")
                 }
@@ -777,6 +790,35 @@ fun V2SettingsScreen(
                 onInfoClick = { showAutoPauseInfoDialog = true },
             )
 
+            val saverModes = com.csqtt.client.BatterySaver.MODES
+            V2DropdownSetting(
+                title = com.csqtt.client.BatterySaver.TITLE,
+                value = saverModes.firstOrNull { it.first == batterySaverMode }?.second ?: saverModes.first().second,
+                options = saverModes.map { it.second },
+                onSelected = { label ->
+                    saverModes.firstOrNull { it.second == label }?.let { (mode, _) ->
+                        scope.launch { settingsStore.saveBatterySaverMode(mode) }
+                    }
+                },
+                onTitleInfo = { showBatterySaverInfoDialog = true },
+            )
+
+            // the level counts only in «Свой уровень»; «Авто» follows the phone's battery saver, so it is shown greyed
+            if (batterySaverMode != com.csqtt.client.BatterySaver.MODE_OFF) {
+                val choices = (com.csqtt.client.BatterySaver.PERCENT_CHOICES + batterySaverPercent).distinct().sorted()
+                V2DropdownSetting(
+                    title = com.csqtt.client.BatterySaver.LEVEL_TITLE,
+                    value = "≤ $batterySaverPercent %",
+                    enabled = batterySaverMode == com.csqtt.client.BatterySaver.MODE_LEVEL,
+                    options = choices.map { "≤ $it %" },
+                    onSelected = { label ->
+                        choices.firstOrNull { "≤ $it %" == label }?.let { percent ->
+                            scope.launch { settingsStore.saveBatterySaverPercent(percent) }
+                        }
+                    },
+                )
+            }
+
             V2SettingsSection("Приложение")
 
             V2SwitchSetting(
@@ -803,6 +845,17 @@ fun V2SettingsScreen(
                         else -> CsqttConstants.Theme.MODE_SYSTEM
                     }
                     scope.launch { settingsStore.saveThemeMode(mode) }
+                },
+            )
+
+            V2DropdownSetting(
+                title = "Дизайн",
+                value = "Новый",
+                options = listOf("Классический", "Новый"),
+                onSelected = { label ->
+                    if (label == "Классический") {
+                        scope.launch { settingsStore.saveUiDesign(CsqttConstants.Theme.DESIGN_CLASSIC) }
+                    }
                 },
             )
 
@@ -835,6 +888,9 @@ fun V2SettingsScreen(
 
     if (showHashesDialog) {
         V2HashesDialog(
+            ownerHashes = if (participantMode) linkHashes else emptyList(),
+            removedOwnerHashes = linkHashesRemoved,
+            onRemovedOwnerHashesChange = { removed -> scope.launch { settingsStore.saveLinkHashesRemoved(removed) } },
             hash1 = vkHash1,
             hash2 = vkHash2,
             hash3 = vkHash3,
@@ -925,6 +981,10 @@ fun V2SettingsScreen(
     showWorkModeDetailDialog?.let { mode ->
         V2WorkModeInfoDialog(mode = mode, onDismiss = { showWorkModeDetailDialog = null })
     }
+    if (showBatterySaverInfoDialog) {
+        com.csqtt.client.ui.v2.dialogs.V2BatterySaverInfoDialog(onDismiss = { showBatterySaverInfoDialog = false })
+    }
+
     if (showAutoPauseInfoDialog) {
         V2WifiAutoPauseInfoDialog(onDismiss = { showAutoPauseInfoDialog = false })
     }

@@ -30,7 +30,7 @@ fun V2ServerConfigSheet(
 ) {
     val c = V2Theme.colors
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val valid = host.isNotBlank() && (sshPort.isBlank() || sshPort.toIntOrNull() in 1..65535) &&
+    val valid = host.isNotBlank() && !com.csqtt.client.ui.legacy.hostHasPort(host) && (sshPort.isBlank() || sshPort.toIntOrNull() in 1..65535) &&
         peerPort.toIntOrNull() in 1..65535 && webPort.toIntOrNull() in 1..65535
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = c.surface) {
         Column(modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 16.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

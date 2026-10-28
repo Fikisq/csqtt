@@ -207,6 +207,7 @@ internal fun SettingsTabContent(
     }
     val parsedCsqttLink = remember(linkText) { parseCsqttLink(linkText) }
     val linkHashes = parsedCsqttLink?.hashes.orEmpty()
+    val linkHashesRemoved by settingsStore.linkHashesRemoved.collectAsStateWithLifecycle(initialValue = emptySet())
     val linkVkAccessToken = parsedCsqttLink?.vkAccessToken.orEmpty()
     val serverWorkers by TunnelManager.serverAssignedWorkers.collectAsState()
     val effectiveServerWorkers = serverWorkers.takeIf { tunnelRunning && it in 3..100 }
@@ -235,7 +236,12 @@ internal fun SettingsTabContent(
     val combinedHashes = remember(vkHash1, vkHash2, vkHash3, vkHash4, vkHash5, vkHash6) {
         allHashes.filter { it.isNotBlank() && it.length >= 16 }.distinct().joinToString(",")
     }
-    val selectableMaxWorkers = CsqttConstants.Tunnel.MAX_WORKERS.toFloat()
+    // The slider stops where the tunnel does: 70, or 100 with «Экстра потоки», lower under a subscription
+    val workersMaximum by settingsStore.workersMaximum.collectAsStateWithLifecycle(
+        initialValue = CsqttConstants.Tunnel.DEFAULT_MAX_WORKERS,
+    )
+    val extraWorkers by settingsStore.extraWorkers.collectAsStateWithLifecycle(initialValue = false)
+    val selectableMaxWorkers = workersMaximum.toFloat()
     var sniInput by rememberSaveable { mutableStateOf("") }
 
     val currentWorkers = roundToGroup(
@@ -290,9 +296,8 @@ internal fun SettingsTabContent(
         
         peerInput = peer
         val port = settingsStore.serverPeerPort.first()
-        val manual = settingsStore.manualPortsEnabled.first()
         if (!peerPortEdited) {
-            val targetPort = if (manual) port.toString() else CsqttConstants.Network.DEFAULT_SERVER_PEER_PORT.toString()
+            val targetPort = port.toString()
             if (peerPortInput != targetPort) {
                 peerPortInput = targetPort
             }
@@ -308,13 +313,11 @@ internal fun SettingsTabContent(
         initialized = true
     }
 
+    // The field shows the port the tunnel dials: the profile's stored one, whatever «Ручные порты» says (a profile from a
+    // link or the V2 design can carry its own; turning «Ручные порты» off stores 46000 again)
     LaunchedEffect(activeProfile, manualPortsEnabled, savedServerPeerPort) {
         if (!peerPortEdited) {
-            val targetPort = if (manualPortsEnabled) {
-                savedServerPeerPort.toString()
-            } else {
-                CsqttConstants.Network.DEFAULT_SERVER_PEER_PORT.toString()
-            }
+            val targetPort = savedServerPeerPort.toString()
             if (peerPortInput != targetPort) {
                 peerPortInput = targetPort
             }
@@ -324,10 +327,6 @@ internal fun SettingsTabContent(
     LaunchedEffect(activeProfile, manualPortsEnabled) {
         if (!manualPortsEnabled) {
             peerPortSaveJob?.cancel()
-            val defaultPort = CsqttConstants.Network.DEFAULT_SERVER_PEER_PORT.toString()
-            if (peerPortInput != defaultPort) {
-                peerPortInput = defaultPort
-            }
             peerPortEdited = false
         }
     }
@@ -416,6 +415,13 @@ internal fun SettingsTabContent(
         }
     }
 
+    // As in V2: the auto-JS mode runs at most 70 workers, so «Экстра потоки» goes off there
+    LaunchedEffect(effectiveVkAuthMode, extraWorkers) {
+        if (effectiveVkAuthMode == CsqttConstants.VkAuth.MODE_AUTO_JS && extraWorkers) {
+            settingsStore.saveExtraWorkers(false)
+        }
+    }
+
     LaunchedEffect(initialized, currentWorkers, savedWorkersPerHash) {
         val savedWorkers = savedWorkersPerHash
         if (initialized && savedWorkers != null && currentWorkers.toInt() != savedWorkers) {
@@ -428,7 +434,8 @@ internal fun SettingsTabContent(
     val isPeerValid = peerInput.isNotBlank() && !peerInput.contains(":")
     val isPeerPortValid = peerPortInput.toIntOrNull() in 1..65535
     val hashesReadyForTunnel = when {
-        participantMode && linkHashes.isNotEmpty() -> true
+        // the owner's hashes still in use, or the participant's own
+        participantMode && linkHashes.isNotEmpty() -> linkHashes.any { it !in linkHashesRemoved } || filledHashCount > 0
         participantMode && linkTokenActive -> true
         autoHashMode -> effectiveVkTokenActive
         else -> filledHashCount > 0
@@ -440,6 +447,9 @@ internal fun SettingsTabContent(
     val passwordRequiredError = showRequiredFieldErrors && !participantMode && connectionPassword.isBlank()
     if (showHashesDialog) {
         HashesDialog(
+            ownerHashes = if (participantMode) linkHashes else emptyList(),
+            removedOwnerHashes = linkHashesRemoved,
+            onRemovedOwnerHashesChange = { removed -> scope.launch { settingsStore.saveLinkHashesRemoved(removed) } },
             hash1 = vkHash1,
             hash2 = vkHash2,
             hash3 = vkHash3,
@@ -566,12 +576,22 @@ internal fun SettingsTabContent(
                     }
 
                     if (linkHashes.isNotEmpty()) {
+                        // the owner's hashes (never shown) plus the participant's own, edited in one dialog
+                        val ownerInUse = linkHashes.count { it !in linkHashesRemoved }
                         Text(
-                            text = "VK хеши из ссылки: ${linkHashes.size}",
+                            text = "VK хеши: от владельца — $ownerInUse, свои — $filledHashCount",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(bottom = 8.dp),
                         )
+                        OutlinedButton(
+                            onClick = { showHashesDialog = true },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape = CsqttShapes.Pill,
+                        ) {
+                            Text("Ссылки VK звонков", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        }
                     } else {
                         if (linkTokenActive) {
                             Text(
@@ -814,6 +834,16 @@ internal fun SettingsTabContent(
                     onInfo = { showWorkersInfoDialog = true },
                     fixedWorkers = effectiveServerWorkers,
                 )
+
+                if (effectiveVkAuthMode != CsqttConstants.VkAuth.MODE_AUTO_JS) {
+                    CsqttSettingRow(
+                        title = "Экстра потоки",
+                        description = "До ${CsqttConstants.Tunnel.MAX_WORKERS} потоков вместо ${CsqttConstants.Tunnel.DEFAULT_MAX_WORKERS}",
+                        checked = extraWorkers,
+                        enabled = !tunnelRunning,
+                        onCheckedChange = { checked -> scope.launch { settingsStore.saveExtraWorkers(checked) } },
+                    )
+                }
 
                 AnimatedVisibility(
                     visible = vkAuthMode == CsqttConstants.VkAuth.MODE_CAPTCHA,

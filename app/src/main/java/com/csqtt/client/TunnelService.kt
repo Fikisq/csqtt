@@ -10,6 +10,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.BatteryManager
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -33,12 +34,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import android.os.BatteryManager
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.net.HttpURLConnection
@@ -109,8 +109,14 @@ class TunnelService : Service() {
     private var autoPauseRequested = false
     @Volatile
     private var autoPausedForWifi = false
-    private var batterySaverLoaded = false
+    // «Экономия батареи»: the setting, and the charge as the sticky battery broadcast last said (main thread)
+    @Volatile
     private var batterySaverMode = BatterySaver.DEFAULT_MODE
+    // nothing is decided before the stored mode is read: the sticky battery broadcast arrives at once, and the default
+    // («Авто») could let go of the locks for a moment under a user's «Выкл»
+    @Volatile
+    private var batterySaverLoaded = false
+    @Volatile
     private var batterySaverPercent = BatterySaver.DEFAULT_PERCENT
     private var batteryLevel = -1
     private var batteryCharging = false
@@ -1286,8 +1292,9 @@ class TunnelService : Service() {
 
     @Synchronized
     private fun acquireWakeLock() {
+        // «Экономия батареи» in force: the CPU may sleep, the tunnel with it — except for a deploy, which needs it awake
         if (BatterySaver.active.value && !DeployManager.isDeploying.value) {
-            releaseWakeLock()
+            releaseWakeLock() // one a deploy or a server check took meanwhile
             return
         }
         val now = SystemClock.elapsedRealtime()
@@ -1488,7 +1495,7 @@ class TunnelService : Service() {
         domainRoutingSettingsJob = null
         batterySaverJob?.cancel()
         batterySaverJob = null
-        batteryReceiver?.let { runCatching { unregisterReceiver(it) } }
+        batteryReceiver?.let { receiver -> runCatching { unregisterReceiver(receiver) } }
         batteryReceiver = null
         BatterySaver.setActive(false)
         stopWifiAutoPauseWatch()

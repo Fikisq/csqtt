@@ -30,10 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import com.csqtt.client.AppReleaseInfo
 import com.csqtt.client.BuildConfig
 import com.csqtt.client.CsqttConstants
@@ -94,7 +91,6 @@ fun CsqttV2Root(
     ) {
         val colors = V2Theme.colors
         val context = LocalContext.current.applicationContext
-        val lifecycleOwner = LocalLifecycleOwner.current
         val scope = rememberCoroutineScope()
         val ownerMode by settingsStore.uiOwnerMode.collectAsStateWithLifecycle(initialValue = false)
         val deployStore = remember(context) { SettingsStore(context, deployScope = true) }

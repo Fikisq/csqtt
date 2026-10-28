@@ -1,29 +1,39 @@
 package com.csqtt.client
 
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BatterySaverTest {
-    @Test fun autoFollowsSystemSaverInsteadOfChargeThreshold() {
-        assertTrue(BatterySaver.shouldSave("auto", 30, 80, false, true))
-        assertFalse(BatterySaver.shouldSave("auto", 30, 5, false, false))
+    private fun save(mode: String, level: Int = 50, charging: Boolean = false, systemSaver: Boolean = false) =
+        BatterySaver.shouldSave(mode, percent = 30, level = level, charging = charging, systemSaver = systemSaver)
+
+    @Test
+    fun `auto follows the phone's battery saver, whatever the charge`() {
+        assertTrue(save(BatterySaver.MODE_AUTO, level = 80, systemSaver = true))
+        assertFalse(save(BatterySaver.MODE_AUTO, level = 5, systemSaver = false))
     }
 
-    @Test fun ownLevelRequiresKnownLowChargeAndNoCharger() {
-        assertTrue(BatterySaver.shouldSave("level", 30, 30, false, false))
-        assertTrue(BatterySaver.shouldSave("level", 30, 0, false, false))
-        assertFalse(BatterySaver.shouldSave("level", 30, 31, false, true))
-        assertFalse(BatterySaver.shouldSave("level", 30, 10, true, true))
-        assertFalse(BatterySaver.shouldSave("level", 30, -1, false, true))
+    @Test
+    fun `own level saves at or below the level and not charging, and ignores the phone's saver`() {
+        assertTrue(save(BatterySaver.MODE_LEVEL, level = 30))
+        assertTrue(save(BatterySaver.MODE_LEVEL, level = 0))
+        assertFalse(save(BatterySaver.MODE_LEVEL, level = 31, systemSaver = true))
+        assertFalse(save(BatterySaver.MODE_LEVEL, level = 10, charging = true))
+        assertFalse(save(BatterySaver.MODE_LEVEL, level = -1))
     }
 
-    @Test fun disabledAndUnknownModesDoNotReleaseCpuForSaving() {
-        for (mode in listOf("off", "", "unknown")) assertFalse(BatterySaver.shouldSave(mode, 30, 5, false, true))
+    @Test
+    fun `off and an unknown mode never save`() {
+        assertFalse(save(BatterySaver.MODE_OFF, level = 5, systemSaver = true))
+        assertFalse(save("", level = 5, systemSaver = true))
     }
 
-    @Test fun defaultsAreVisibleChoices() {
-        assertEquals("auto", BatterySaver.DEFAULT_MODE)
-        assertEquals(BatterySaver.DEFAULT_MODE, BatterySaver.MODES.first().first)
+    @Test
+    fun `auto is the default and first, the default level is offered`() {
+        assertEquals(BatterySaver.MODE_AUTO, BatterySaver.DEFAULT_MODE)
+        assertEquals(BatterySaver.MODE_AUTO, BatterySaver.MODES.first().first)
         assertTrue(BatterySaver.DEFAULT_PERCENT in BatterySaver.PERCENT_CHOICES)
     }
 }

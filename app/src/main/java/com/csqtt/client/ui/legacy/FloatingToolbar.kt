@@ -64,10 +64,6 @@ fun FloatingToolbar(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val selectedRole = if (csqttLinkMode) UsageRole.Participant else UsageRole.Owner
-    val design by settingsStore.uiDesign.collectAsStateWithLifecycle("v2")
-    val batteryMode by settingsStore.batterySaverMode.collectAsStateWithLifecycle(BatterySaver.DEFAULT_MODE)
-    val batteryPercent by settingsStore.batterySaverPercent.collectAsStateWithLifecycle(BatterySaver.DEFAULT_PERCENT)
-    var showBatteryInfo by rememberSaveable { mutableStateOf(false) }
     val vkAuthMode by settingsStore.vkAuthMode.collectAsStateWithLifecycle(
         initialValue = CsqttConstants.VkAuth.MODE_CALLS,
     )
@@ -78,11 +74,21 @@ fun FloatingToolbar(
     val turnSubnetIpLimit by settingsStore.turnSubnetIpLimit.collectAsStateWithLifecycle(
         initialValue = "ALL",
     )
+    val uiDesign by settingsStore.uiDesign.collectAsStateWithLifecycle(
+        initialValue = CsqttConstants.Theme.DESIGN_CLASSIC,
+    )
     var isExpanded by rememberSaveable { mutableStateOf(false) }
     var showQrScanner by rememberSaveable { mutableStateOf(false) }
     var showSupportDeveloperDialog by rememberSaveable { mutableStateOf(false) }
     var showImportExportDialog by rememberSaveable { mutableStateOf(false) }
     var showAutoPauseInfo by rememberSaveable { mutableStateOf(false) }
+    var showBatterySaverInfo by rememberSaveable { mutableStateOf(false) }
+    val batterySaverMode by settingsStore.batterySaverMode.collectAsStateWithLifecycle(
+        initialValue = BatterySaver.DEFAULT_MODE,
+    )
+    val batterySaverPercent by settingsStore.batterySaverPercent.collectAsStateWithLifecycle(
+        initialValue = BatterySaver.DEFAULT_PERCENT,
+    )
     var showTurnSubnetsDialog by rememberSaveable { mutableStateOf(false) }
     val profileNames by settingsStore.profileNames.collectAsStateWithLifecycle(
         initialValue = emptyMap(),
@@ -277,23 +283,22 @@ fun FloatingToolbar(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     )
 
-                    if (!csqttLinkMode) {
-                        CompactDropdownSetting(
-                            title = "Профиль конфигурации",
-                            selectedKey = activeProfile.toString(),
-                            options = (CsqttConstants.Profiles.MIN_INDEX..CsqttConstants.Profiles.MAX_INDEX)
-                                .map { profile -> profile.toString() to (profileNames[profile] ?: "Профиль $profile") },
-                            enabled = true,
-                            onSelected = { profile ->
-                                profile.toIntOrNull()?.let(onActiveProfileChange)
-                            },
-                            onItemEdit = { key ->
-                                val p = key.toIntOrNull() ?: 0
-                                editingProfileIndex = p
-                                editingProfileName = profileNames[p] ?: "Профиль $p"
-                            },
-                        )
-                    }
+                    // participants switch profiles too (one per link), as in V2
+                    CompactDropdownSetting(
+                        title = "Профиль конфигурации",
+                        selectedKey = activeProfile.toString(),
+                        options = (CsqttConstants.Profiles.MIN_INDEX..CsqttConstants.Profiles.MAX_INDEX)
+                            .map { profile -> profile.toString() to (profileNames[profile] ?: "Профиль $profile") },
+                        enabled = true,
+                        onSelected = { profile ->
+                            profile.toIntOrNull()?.let(onActiveProfileChange)
+                        },
+                        onItemEdit = { key ->
+                            val p = key.toIntOrNull() ?: 0
+                            editingProfileIndex = p
+                            editingProfileName = profileNames[p] ?: "Профиль $p"
+                        },
+                    )
 
                     CompactDropdownSetting(
                         title = "Отпечаток",
@@ -322,20 +327,16 @@ fun FloatingToolbar(
                     )
 
                     CompactDropdownSetting(
-                        title = "Дизайн", selectedKey = design,
-                        options = listOf("classic" to "Классический", "v2" to "Новый"), enabled = true,
-                        onSelected = { scope.launch { settingsStore.saveUiDesign(it) } },
+                        title = "Дизайн",
+                        selectedKey = uiDesign,
+                        options = listOf(
+                            CsqttConstants.Theme.DESIGN_CLASSIC to "Классический",
+                            CsqttConstants.Theme.DESIGN_V2 to "Новый",
+                        ),
+                        enabled = true,
+                        onSelected = { design -> scope.launch { settingsStore.saveUiDesign(design) } },
                     )
-                    CompactDropdownSetting(
-                        title = BatterySaver.TITLE, selectedKey = batteryMode, options = BatterySaver.MODES, enabled = true,
-                        onSelected = { scope.launch { settingsStore.saveBatterySaverMode(it) } },
-                        onTitleInfo = { showBatteryInfo = true },
-                    )
-                    CompactDropdownSetting(
-                        title = BatterySaver.LEVEL_TITLE, selectedKey = batteryPercent.toString(),
-                        options = BatterySaver.PERCENT_CHOICES.map { it.toString() to "≤ $it %" }, enabled = batteryMode == BatterySaver.MODE_LEVEL,
-                        onSelected = { it.toIntOrNull()?.let { value -> scope.launch { settingsStore.saveBatterySaverPercent(value) } } },
-                    )
+
                     CsqttSettingRow(
                         title = "Автопауза при Wi-Fi",
                         checked = autoPauseOnWifi,
@@ -343,6 +344,29 @@ fun FloatingToolbar(
                         onInfoClick = { showAutoPauseInfo = true },
                         infoContentDescription = "Как работает автопауза при Wi-Fi",
                     )
+
+                    CompactDropdownSetting(
+                        title = BatterySaver.TITLE,
+                        selectedKey = batterySaverMode,
+                        options = BatterySaver.MODES,
+                        enabled = true,
+                        onSelected = { mode -> scope.launch { settingsStore.saveBatterySaverMode(mode) } },
+                        onTitleInfo = { showBatterySaverInfo = true },
+                    )
+
+                    // the level counts only in «Свой уровень»; «Авто» follows the phone's battery saver, so it is shown greyed
+                    if (batterySaverMode != BatterySaver.MODE_OFF) {
+                        CompactDropdownSetting(
+                            title = BatterySaver.LEVEL_TITLE,
+                            selectedKey = batterySaverPercent.toString(),
+                            options = (BatterySaver.PERCENT_CHOICES + batterySaverPercent).distinct().sorted()
+                                .map { percent -> percent.toString() to "≤ $percent %" },
+                            enabled = batterySaverMode == BatterySaver.MODE_LEVEL,
+                            onSelected = { key ->
+                                key.toIntOrNull()?.let { percent -> scope.launch { settingsStore.saveBatterySaverPercent(percent) } }
+                            },
+                        )
+                    }
 
                     if (csqttLinkMode) {
                         CsqttSettingRow(
@@ -386,12 +410,13 @@ fun FloatingToolbar(
         }
     }
 
+    if (showBatterySaverInfo) {
+        BatterySaverInfoDialog(onDismiss = { showBatterySaverInfo = false })
+    }
+
     if (showAutoPauseInfo) {
         WifiAutoPauseInfoDialog(onDismiss = { showAutoPauseInfo = false })
     }
-    if (showBatteryInfo) AlertDialog(onDismissRequest = { showBatteryInfo = false },
-        title = { Text(BatterySaver.TITLE) }, text = { Text(BatterySaver.DESCRIPTION) },
-        confirmButton = { TextButton(onClick = { showBatteryInfo = false }) { Text("Понятно") } })
 
     if (showTurnSubnetsDialog) {
         TurnSubnetsDialog(

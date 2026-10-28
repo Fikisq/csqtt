@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.outlined.ContentPaste
@@ -55,6 +56,12 @@ import com.csqtt.client.VkHashValidationCodec
 import com.csqtt.client.VkHashValidationStatus
 import com.csqtt.client.ui.legacy.utils.stripVkUrlStatic
 import com.csqtt.client.ui.v2.design.V2Theme
+import androidx.compose.ui.focus.focusRequester
+import com.csqtt.client.ui.v2.components.V2PillButton
+import com.csqtt.client.ui.v2.components.V2PillStyle
+import com.csqtt.client.ui.v2.components.V2SquareIconButton
+import com.csqtt.client.ui.v2.design.V2BodyFamily
+import com.csqtt.client.ui.v2.design.V2Shapes
 import kotlinx.coroutines.launch
 
 @Composable
@@ -71,6 +78,11 @@ fun V2HashesDialog(
     onAutoSave: ((String, String, String, String, String, String) -> Unit)? = null,
     onSave: (String, String, String, String, String, String) -> Unit,
     onDismiss: () -> Unit,
+    // A participant's link hashes: used first, never shown (they are the owner's), each can be checked, taken out or
+    // replaced by one of the participant's own (taken out, then the first free field below takes the new one)
+    ownerHashes: List<String> = emptyList(),
+    removedOwnerHashes: Set<String> = emptySet(),
+    onRemovedOwnerHashesChange: (Set<String>) -> Unit = {},
 ) {
     val colors = V2Theme.colors
     val context = LocalContext.current
@@ -87,6 +99,15 @@ fun V2HashesDialog(
     var unavailableCount by remember { mutableIntStateOf(0) }
 
     val hashes = listOf(h1, h2, h3, h4, h5, h6)
+
+    var removedOwner by remember(removedOwnerHashes) { mutableStateOf(removedOwnerHashes) }
+    val fieldFocus = remember { List(6) { androidx.compose.ui.focus.FocusRequester() } }
+    // the tunnel takes at most MAX_VK_HASHES, the owner's first: say when the participant's own would be cut
+    val ownerInUse = ownerHashes.count { it !in removedOwner }
+    val ownFilled = hashes.count { it.trim().length >= 16 }
+    val overLimit = ownerHashes.isNotEmpty() &&
+        ownerInUse + ownFilled > com.csqtt.client.CsqttConstants.Tunnel.MAX_VK_HASHES
+    var replaceNote by remember { mutableStateOf(false) }
 
     fun updateHash(index: Int, raw: String) {
         val cleaned = stripVkUrlStatic(raw.filter { it != ' ' && it != '\n' && it != '\r' })
@@ -115,7 +136,7 @@ fun V2HashesDialog(
         onAutoSave?.invoke(cur1, cur2, cur3, cur4, cur5, cur6)
     }
 
-    val activeHashes = hashes.map(String::trim).filter { it.length >= 16 }.distinct()
+    val activeHashes = (ownerHashes.filterNot { it in removedOwner } + hashes.map(String::trim)).filter { it.length >= 16 }.distinct()
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -150,6 +171,106 @@ fun V2HashesDialog(
                 Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (ownerHashes.isNotEmpty()) {
+                    ownerHashes.forEachIndexed { idx, ownerHash ->
+                        val removed = ownerHash in removedOwner
+                        val status = results[ownerHash]
+                        fun setRemoved(value: Boolean) {
+                            removedOwner = if (value) removedOwner + ownerHash else removedOwner - ownerHash
+                            onRemovedOwnerHashesChange(removedOwner)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "От владельца ${idx + 1}",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontFamily = V2BodyFamily,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                    ),
+                                    color = if (removed) colors.textMuted else colors.textPrimary,
+                                )
+                                Text(
+                                    text = when {
+                                        removed -> "Убран"
+                                        status == VkHashValidationStatus.Valid -> "Активен"
+                                        status == VkHashValidationStatus.Invalid -> "Недействителен"
+                                        else -> "Не проверен"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = V2BodyFamily, fontSize = 11.sp),
+                                    color = when {
+                                        removed -> colors.textMuted
+                                        status == VkHashValidationStatus.Valid -> Color(0xFF66BB6A)
+                                        status == VkHashValidationStatus.Invalid -> colors.error
+                                        else -> colors.textSecondary
+                                    },
+                                )
+                            }
+                            if (removed) {
+                                V2PillButton(
+                                    text = "Вернуть",
+                                    onClick = { setRemoved(false) },
+                                    style = V2PillStyle.Outline,
+                                    enabled = !isChecking,
+                                    height = 40.dp,
+                                )
+                            } else {
+                                V2PillButton(
+                                    text = "Заменить",
+                                    onClick = {
+                                        setRemoved(true)
+                                        val free = hashes.indexOfFirst { it.isBlank() }
+                                        replaceNote = free < 0
+                                        if (free >= 0) runCatching { fieldFocus[free].requestFocus() }
+                                    },
+                                    style = V2PillStyle.Outline,
+                                    enabled = !isChecking,
+                                    height = 40.dp,
+                                )
+                                V2SquareIconButton(
+                                    icon = Icons.Default.Delete,
+                                    contentDescription = "Убрать хеш владельца ${idx + 1}",
+                                    onClick = { setRemoved(true) },
+                                    size = 40.dp,
+                                    iconSize = 18.dp,
+                                    shape = V2Shapes.Field,
+                                    backgroundColor = colors.field,
+                                    contentColor = colors.error,
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        text = "Свои хеши",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = V2BodyFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                        ),
+                        color = colors.textSecondary,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                    if (replaceNote) {
+                        Text(
+                            text = "Свободных полей нет: очистите один из своих хешей и вставьте новый",
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = V2BodyFamily, fontSize = 12.sp),
+                            color = colors.error,
+                        )
+                    }
+                    if (overLimit) {
+                        Text(
+                            text = "Используются первые ${com.csqtt.client.CsqttConstants.Tunnel.MAX_VK_HASHES} хешей: сначала " +
+                                "владельца, потом ваши. Чтобы работали все ваши, уберите часть хешей владельца.",
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = V2BodyFamily, fontSize = 12.sp),
+                            color = colors.textSecondary,
+                        )
+                    }
+                }
+
                 hashes.forEachIndexed { index, value ->
                     val short = value.isNotBlank() && value.length < 16
                     val status = results[value]
@@ -167,7 +288,7 @@ fun V2HashesDialog(
                                 }
                                 BasicTextField(
                                     value = value, onValueChange = { updateHash(index, it) },
-                                    enabled = !isChecking, singleLine = true, modifier = Modifier.weight(1f),
+                                    enabled = !isChecking, singleLine = true, modifier = Modifier.weight(1f).focusRequester(fieldFocus[index]),
                                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.textPrimary, fontSize = 13.sp, fontFamily = FontFamily.Monospace),
                                     decorationBox = { input -> Box(contentAlignment = Alignment.CenterStart) {
                                         if (value.isEmpty()) Text("Ссылка VK или хеш · от 16 знаков", color = colors.textMuted, fontSize = 12.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)

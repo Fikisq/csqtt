@@ -54,7 +54,7 @@ internal object ProfileTunnelProbe {
 
     private suspend fun runProbe(context: Context, profile: Int): ProfilePingResult = coroutineScope {
         val store = SettingsStore(context, readOnlyProfile = profile)
-        val source = resolveConnectionSource(store) ?: return@coroutineScope ProfilePingResult.Failure("Нет адреса сервера")
+        val source = resolveConnectionSource(store, updateLogMask = false) ?: return@coroutineScope ProfilePingResult.Failure("Нет адреса сервера")
         if (source.password.isBlank()) return@coroutineScope ProfilePingResult.Failure("Нет пароля туннеля")
         val binary = File(context.applicationInfo.nativeLibraryDir, CsqttConstants.Tunnel.BINARY_NAME)
         if (!binary.exists()) return@coroutineScope ProfilePingResult.Failure("Нет ядра для этой архитектуры")
