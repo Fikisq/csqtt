@@ -96,7 +96,16 @@ fun CsqttV2Root(
         val deployStore = remember(context) { SettingsStore(context, deployScope = true) }
         // Keep this store's own snapshot ready, without reviving a saved form from another VPS.
         val deploySettings by deployStore.deploySettingsSnapshot.collectAsStateWithLifecycle(DeploySettingsSnapshot())
-        val tabs = remember(ownerMode) { V2Tab.entries.filter { it != V2Tab.Deploy || ownerMode } }
+        val participantShowLogs by settingsStore.participantShowLogs.collectAsStateWithLifecycle(false)
+        val tabs = remember(ownerMode, participantShowLogs) {
+            V2Tab.entries.filter { tab ->
+                when (tab) {
+                    V2Tab.Deploy -> ownerMode
+                    V2Tab.Logs -> ownerMode || participantShowLogs
+                    else -> true
+                }
+            }
+        }
         var selectedTabName by rememberSaveable { mutableStateOf(V2Tab.Connection.name) }
         val tabStateHolder = rememberSaveableStateHolder()
         var overlay by rememberSaveable { mutableStateOf<String?>(null) }
@@ -238,6 +247,8 @@ fun CsqttV2Root(
                         version = version,
                         onBack = { overlay = null },
                         onAbout = { overlay = OVERLAY_ABOUT },
+                        onOpenResourceMonitor = { showResourceSheet = true },
+                        onVersionClick = { showVersionSheet = true },
                     )
 
                     OVERLAY_ABOUT -> V2AboutScreen(

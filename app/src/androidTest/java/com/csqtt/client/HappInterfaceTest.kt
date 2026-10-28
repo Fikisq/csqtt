@@ -36,6 +36,8 @@ class HappInterfaceTest {
             store.saveThemeMode("dark")
             store.saveUpdateCheckIntervalHours(UPDATE_CHECK_NEVER)
             store.saveActiveProfile(0)
+            store.saveParticipantShowLogs(true)
+            store.saveLoggingEnabled(true)
             store.saveProfileConnectionSettings(0, "203.0.113.10", 46000, "DemoPassword1234", 20)
         }
         compose.setContent { CsqttV2Root(store) }
@@ -82,6 +84,89 @@ class HappInterfaceTest {
         compose.onNodeWithContentDescription("Подсказка: Режим SRTP").performClick()
         compose.onNodeWithText("Понятно").assertIsDisplayed().performClick()
         screenshot("happ-tunnel.png")
+    }
+
+    @Test fun participantCanHideLogsWithoutDisablingRecordingAndOwnerKeepsLogs() {
+        compose.onNodeWithContentDescription("Настройки").performClick()
+        compose.onNodeWithText("Показывать вкладку «Логи»").performScrollTo().performClick()
+        compose.waitUntil(5000) { runBlocking { !store.participantShowLogs.first() } }
+        runBlocking { check(store.loggingEnabled.first()) }
+        compose.onNodeWithContentDescription("Назад").performClick()
+        compose.onNodeWithText("Логи").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Настройки").performClick()
+        compose.onNodeWithText("Показывать вкладку «Логи»").performScrollTo().performClick()
+        compose.waitUntil(5000) { runBlocking { store.participantShowLogs.first() } }
+        compose.onNodeWithContentDescription("Назад").performClick()
+        compose.onNodeWithText("Логи").performClick()
+        runBlocking { store.saveParticipantShowLogs(false) }
+        compose.waitUntil(5000) { compose.onAllNodesWithText("Логи").fetchSemanticsNodes().isEmpty() }
+        runBlocking { store.saveUiOwnerMode(true) }
+        compose.waitUntil(5000) { compose.onAllNodesWithText("Логи").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("Настройки").performClick()
+        compose.onNodeWithText("Показывать вкладку «Логи»").assertDoesNotExist()
+    }
+
+    @Test fun captchaControlsPersistAndKeepOtherProfilesUnchanged() {
+        runBlocking {
+            store.saveVkAuthMode("legacy", forProfile = 0)
+            store.saveCaptchaSettings("wv", "manual", forProfile = 0)
+            store.saveCaptchaSettings("auto", "auto", forProfile = 26)
+        }
+        compose.onNodeWithText("Туннель").performClick()
+        compose.onNodeWithText("Настройки капчи").performScrollTo().performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithText("WBV").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("WBV").performClick()
+        compose.onNodeWithText("RJS").performClick()
+        compose.waitUntil(5000) { runBlocking { store.captchaMode.first() == "rjs" } }
+        runBlocking { check(store.captchaSolveMethod.first() == "auto") }
+        compose.onNodeWithText("Готово").performClick()
+        compose.onNodeWithText("Настройки капчи").performScrollTo().performClick()
+        compose.onNodeWithText("RJS").assertExists()
+        runBlocking {
+            val other = SettingsStore(compose.activity, readOnlyProfile = 26)
+            check(other.captchaMode.first() == "auto")
+            check(other.captchaWbvSolveMethod.first() == "auto")
+            store.saveVkAuthMode("vkcalls", forProfile = 0)
+        }
+    }
+
+    @Test fun resourceMonitorAndVersionSheetAreReachableFromSettings() {
+        compose.onNodeWithContentDescription("Настройки").performClick()
+        compose.onNodeWithText("Монитор ресурсов").performScrollTo().performClick()
+        compose.onNodeWithText("Замер ресурсов").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Закрыть").performClick()
+        compose.onNodeWithText("Версия и обновления").performScrollTo().performClick()
+        compose.onNodeWithText("У вас установлена").assertExists()
+    }
+
+    @Test fun panelPathConfirmationIsReachableWithoutStartingServerWork() {
+        runBlocking {
+            store.saveUiOwnerMode(true)
+            val deploy = SettingsStore(compose.activity, deployScope = true)
+            deploy.saveDeployProfileDraft(DeploySettingsSnapshot(profile = 25, serverName = "Panel fixture",
+                ip = "203.0.113.125", sshLogin = "fixture", sshPassword = "fixture-password", sshPort = "5052"))
+            deploy.saveActiveProfile(25)
+        }
+        compose.onNodeWithText("Деплой").performClick()
+        compose.onNodeWithContentDescription("Действия веб-панели").performClick()
+        compose.onNodeWithText("Сменить путь панели").performClick()
+        compose.onNodeWithText("Смена пути панели").assertExists()
+        compose.onNodeWithText("Отмена").performClick()
+        runBlocking { check(!DeployManager.isDeploying.value) }
+    }
+
+    @Test fun connectedVkAccountOpensSessionControlsWithoutStartingLogin() {
+        runBlocking {
+            store.saveVkAccessToken("fixture-session-token-never-sent", "fixture-user")
+            store.saveVkHashMode("auto_api", forProfile = 0)
+        }
+        compose.onNodeWithText("Туннель").performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithText("Аккаунт VK подключён").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Аккаунт VK подключён").performClick()
+        compose.onNodeWithText("Копировать токен").assertIsDisplayed()
+        compose.onNodeWithText("Удалить токен").assertIsDisplayed()
+        compose.onNodeWithText("Назад").performClick()
+        runBlocking { store.clearVkAccessToken(); store.saveVkHashMode("manual", forProfile = 0) }
     }
 
     @Test fun ownerModeRevealsRealDeployAndPersistsSelection() {

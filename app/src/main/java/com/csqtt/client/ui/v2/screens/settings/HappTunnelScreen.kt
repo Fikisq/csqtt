@@ -18,6 +18,9 @@ import com.csqtt.client.ui.v2.components.*
 import com.csqtt.client.ui.v2.design.V2Theme
 import com.csqtt.client.ui.v2.dialogs.V2HashesDialog
 import com.csqtt.client.ui.v2.dialogs.V2TurnSubnetsDialog
+import com.csqtt.client.ui.v2.dialogs.V2VkTokenRevokeDialog
+import com.csqtt.client.ui.v2.dialogs.V2AutoVkRiskDialog
+import com.csqtt.client.ui.v2.dialogs.V2TcpTransportRiskDialog
 import com.csqtt.client.ui.v2.screens.connection.V2ProfilePickerMenu
 import com.csqtt.client.ui.v2.screens.connection.V2EditProfileModal
 import kotlinx.coroutines.delay
@@ -71,6 +74,12 @@ fun HappTunnelScreen(settingsStore: SettingsStore, version: String, onSettings: 
     var editing by remember { mutableStateOf<Int?>(null) }
     var showHashes by remember { mutableStateOf(false) }
     var showSubnets by remember { mutableStateOf(false) }
+    var showCaptcha by remember(profile) { mutableStateOf(false) }
+    var showVkSession by remember(profile) { mutableStateOf(false) }
+    var pendingAutoJs by remember(profile) { mutableStateOf<(() -> Unit)?>(null) }
+    var pendingTcp by remember(profile) { mutableStateOf<(() -> Unit)?>(null) }
+    val autoJsAcknowledged by settingsStore.autoJsRiskAcknowledged.collectAsStateWithLifecycle(false)
+    val tcpAcknowledged by settingsStore.tcpTransportRiskAcknowledged.collectAsStateWithLifecycle(false)
     val effectiveWorkers = WorkerCountPolicy.normalize(workers, workerMaximum)
     val draftTracker = remember(profile) { mutableStateOf<ProfileConnectionSnapshot?>(null) }
     SideEffect {
@@ -96,7 +105,19 @@ fun HappTunnelScreen(settingsStore: SettingsStore, version: String, onSettings: 
         val validPort = port.toIntOrNull()?.takeIf { it in 1..65535 } ?: return@LaunchedEffect
         settingsStore.saveProfileConnectionSettings(profile, host, validPort, password, effectiveWorkers, expectedRevision = revision)
     }
-    fun changeHash(label: String) { scope.launch { settingsStore.saveVkHashMode(when(label) { "Авто API" -> "auto_api"; "Авто ВК" -> "auto_js"; else -> "manual" }, forProfile = editingProfile) } }
+    fun requestAutoJs(nextAuth: String, apply: () -> Unit) {
+        if (shouldConfirmAutoJsMode(authMode, nextAuth, autoJsAcknowledged)) pendingAutoJs = apply else apply()
+    }
+    fun changeHash(label: String) {
+        val mode = when(label) { "Авто API" -> "auto_api"; "Авто ВК" -> "auto_js"; else -> "manual" }
+        requestAutoJs(vkAuthModeForHashMode(mode, authMode)) {
+            scope.launch { settingsStore.saveVkHashMode(mode, forProfile = editingProfile) }
+        }
+    }
+    LaunchedEffect(profile, authMode, extraWorkers, ownerHashes) {
+        if (authMode == "auto_js" && ownerHashes.isNotEmpty()) settingsStore.saveVkAuthMode("vkcalls", forProfile = profile)
+        if (authMode == "auto_js" && extraWorkers) settingsStore.saveExtraWorkers(false, forProfile = profile)
+    }
     val parts = hashes.split(Regex("[,\\s]+" )).filter(String::isNotBlank)
     val green = c.success
     val orange = c.warning
@@ -116,20 +137,27 @@ fun HappTunnelScreen(settingsStore: SettingsStore, version: String, onSettings: 
                 }
                 Spacer(Modifier.height(7.dp))
                 HappField("Пароль туннеля", password, { password = it }, password = true, enabled = loaded && !busy)
-                if (ownerHashes.isNotEmpty() || hashMode == "manual") {
+                if (!linkTokenActive && ownerHashes.isEmpty() && authMode != "auto_js" && hashMode == "manual" || ownerHashes.isNotEmpty()) {
                     OutlinedButton(onClick = { showHashes = true }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp).height(44.dp), enabled = !busy) { Text("Настроить хеши") }
                 } else {
-                    Button(onClick = onVkAuthRequested, modifier = Modifier.fillMaxWidth().padding(top = 6.dp).height(44.dp), enabled = !busy) { Text(if (token.isNotBlank()) "Аккаунт VK подключён" else "Войти в VK") }
+                    Button(onClick = { if (token.isNotBlank()) showVkSession = true else onVkAuthRequested() }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp).height(44.dp), enabled = !busy && !linkTokenActive) { Text(if (linkTokenActive) "Токен VK из ссылки" else if (token.isNotBlank()) "Аккаунт VK подключён" else "Войти в VK") }
                 }
                 if (ownerHashes.isNotEmpty()) Text("Хеши владельца: ${ownerHashes.count { it !in removedOwner }} · свои: ${parts.size}", color = c.accent, fontSize = 12.sp)
                 if (ownerHashes.isEmpty() && !linkTokenActive) HappChoice("Режим хешей", when(hashMode) { "auto_api" -> "Авто API"; "auto_js" -> "Авто ВК"; else -> "Ручные хеши" }, listOf("Ручные хеши", "Авто API", "Авто ВК"), ::changeHash,
                     tone = if(hashMode == "auto_js") orange else green, enabled = !busy,
                     help = "Ручные хеши — шесть хешей звонков без входа в VK. Авто API — получение через API VK. Авто ВК — получение через авторизованный аккаунт VK.")
-                HappChoice("Режим кредов", when(authMode) { "auto_js" -> "Авто ВК"; "legacy" -> "Капча"; else -> "Авто" }, listOf("Авто", "Капча", "Авто ВК"), { label -> scope.launch { settingsStore.saveVkAuthMode(when(label) { "Авто ВК" -> "auto_js"; "Капча" -> "legacy"; else -> "vkcalls" }, forProfile = editingProfile) } },
+                HappChoice("Режим кредов", when(authMode) { "auto_js" -> "Авто ВК"; "legacy" -> "Капча"; else -> "Авто" }, if (ownerHashes.isNotEmpty()) listOf("Авто", "Капча") else listOf("Авто", "Капча", "Авто ВК"), { label ->
+                    val mode = when(label) { "Авто ВК" -> "auto_js"; "Капча" -> "legacy"; else -> "vkcalls" }
+                    requestAutoJs(mode) { scope.launch { settingsStore.saveVkAuthMode(mode, forProfile = editingProfile) } }
+                },
                     tone = if(authMode == "vkcalls") green else orange, enabled = !busy, help = "Авто — гостевые TURN-креды VK Calls. Капча — браузерный способ с возможной капчей. Авто ВК — креды авторизованного аккаунта.")
                 HappChoice("Режим SRTP", when(srtp) { "dtls-srtp" -> "DTLS-SRTP"; "wrap-srtp" -> "WRAP-SRTP"; else -> "Авто" }, listOf("Авто", "DTLS-SRTP", "WRAP-SRTP"), { label -> scope.launch { settingsStore.saveSrtpMode(when(label) { "DTLS-SRTP" -> "dtls-srtp"; "WRAP-SRTP" -> "wrap-srtp"; else -> "auto" }, forProfile = editingProfile) } },
                     tone = if(srtp == "wrap-srtp") orange else green, enabled = !busy, help = "Авто — DTLS-SRTP с переходом к WRAP-SRTP. DTLS-SRTP — настоящее рукопожатие. WRAP-SRTP — SRTP-обёртка без DTLS-рукопожатия.")
-                HappChoice("Транспорт", if(transport == "udp") "UDP" else "TCP", listOf("UDP", "TCP"), { label -> scope.launch { settingsStore.saveTurnTransport(if(label == "UDP") "udp" else CsqttConstants.Tunnel.TURN_TRANSPORT_TCP_TLS, forProfile = editingProfile) } },
+                HappChoice("Транспорт", if(transport == "udp") "UDP" else "TCP", listOf("UDP", "TCP"), { label ->
+                    val mode = if(label == "UDP") "udp" else CsqttConstants.Tunnel.TURN_TRANSPORT_TCP_TLS
+                    val apply = { scope.launch { settingsStore.saveTurnTransport(mode, forProfile = editingProfile) }; Unit }
+                    if (shouldConfirmTcpTransport(transport, mode, tcpAcknowledged)) pendingTcp = apply else apply()
+                },
                     tone = if(transport == "udp") green else orange, enabled = !busy, help = "UDP — основной транспорт TURN. TCP/TLS — альтернатива, если UDP недоступен.")
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("Потоки", Modifier.weight(1f), fontSize = 13.sp)
@@ -139,6 +167,7 @@ fun HappTunnelScreen(settingsStore: SettingsStore, version: String, onSettings: 
                 V2PowerSlider(effectiveWorkers.toFloat(), maximum = workerMaximum.toFloat(), enabled = !busy,
                     onValueChange = { workers = WorkerCountPolicy.normalize(it.roundToInt(), workerMaximum) }, showHeader = false)
                 HappActionRow("TURN подсети", subnet.ifBlank { "Автоматически" }, { showSubnets = true })
+                if (authMode == "legacy") HappActionRow("Настройки капчи", onClick = { showCaptcha = true })
             }
             Spacer(Modifier.height(4.dp))
         }
@@ -152,4 +181,20 @@ fun HappTunnelScreen(settingsStore: SettingsStore, version: String, onSettings: 
         ownerHashes = ownerHashes, removedOwnerHashes = removedOwner,
         onRemovedOwnerHashesChange = { removed -> scope.launch { settingsStore.saveLinkHashesRemoved(removed, forProfile = editingProfile) } })
     if (showSubnets) V2TurnSubnetsDialog(subnet, ipLimit, { scope.launch { settingsStore.saveSelectedTurnSubnet(it, forProfile = editingProfile) } }, { scope.launch { settingsStore.saveTurnSubnetIpLimit(it, forProfile = editingProfile) } }, { showSubnets = false })
+    if (showCaptcha) HappCaptchaDialog(settingsStore, profile, busy) { showCaptcha = false }
+    if (showVkSession) V2VkTokenRevokeDialog(
+        onCancel = { showVkSession = false },
+        onCopyToken = {
+            context.getSystemService(android.content.ClipboardManager::class.java)
+                ?.setPrimaryClip(android.content.ClipData.newPlainText("VK token", token))
+            context.showRaisedToast("Токен VK скопирован", android.widget.Toast.LENGTH_SHORT)
+        },
+        onRevokeToken = { showVkSession = false; scope.launch { settingsStore.clearVkAccessToken() } },
+    )
+    pendingAutoJs?.let { apply -> V2AutoVkRiskDialog(true,
+        onAcknowledge = { pendingAutoJs = null; apply() },
+        onDoNotRemind = { scope.launch { settingsStore.saveAutoJsRiskAcknowledged(true) }; pendingAutoJs = null; apply() }) }
+    pendingTcp?.let { apply -> V2TcpTransportRiskDialog(
+        onAcknowledge = { pendingTcp = null; apply() },
+        onDoNotRemind = { scope.launch { settingsStore.saveTcpTransportRiskAcknowledged(true) }; pendingTcp = null; apply() }) }
 }

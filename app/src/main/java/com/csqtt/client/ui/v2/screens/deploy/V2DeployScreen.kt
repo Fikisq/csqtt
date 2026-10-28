@@ -1017,6 +1017,9 @@ internal fun V2DeployScreen(
                     })
                     V2CircleIconButton(icon = Icons.Default.Delete, contentDescription = "Удалить VPS из приложения", onClick = { if(!actionsBusy && host.isNotBlank()) showDeleteAppServerDialog = true })
                     V2CircleIconButton(icon = Icons.Default.Add, contentDescription = "Добавить VPS", onClick = { openAddServerSheet() })
+                    V2CircleIconButton(icon = Icons.Default.MoreVert, contentDescription = "Действия веб-панели", onClick = {
+                        if (!actionsBusy) showActionsMenu = true
+                    })
                 }
             }
             V2Card(contentPadding = PaddingValues(4.dp), borderColor = colors.outline) {
@@ -1083,6 +1086,16 @@ internal fun V2DeployScreen(
             }) }
         }
     }, confirmButton = { androidx.compose.material3.TextButton(onClick = { showServerMenu = false; openAddServerSheet() }) { Text("Добавить VPS") } })
+
+    if (showActionsMenu) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { showActionsMenu = false }, title = { Text("Веб-панель") },
+        text = { Column {
+            androidx.compose.material3.TextButton(onClick = { showActionsMenu = false; showSecretsDialog = true }) { Text("Настройки веб-панели") }
+            androidx.compose.material3.TextButton(onClick = { showActionsMenu = false; copyPanelLink() }, enabled = host.isNotBlank()) { Text("Копировать ссылку панели") }
+            androidx.compose.material3.TextButton(onClick = { showActionsMenu = false; showRegenConfirmDialog = true }, enabled = host.isNotBlank() && sshAuthReady) { Text("Сменить путь панели") }
+        } },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { showActionsMenu = false }) { Text("Закрыть") } },
+    )
 
     // Модалка (ModalBottomSheet) для заполнения и сохранения данных сервера
     if (showConfigSheet) {

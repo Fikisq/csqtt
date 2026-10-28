@@ -17,6 +17,7 @@ class DesignCompatibilityTest {
         val oldMode = runBlocking { store.batterySaverMode.first() }
         val oldPercent = runBlocking { store.batterySaverPercent.first() }
         val oldOwner = runBlocking { store.uiOwnerMode.first() }
+        val oldShowLogs = runBlocking { store.participantShowLogs.first() }
         val profile = runBlocking { store.activeProfile.first() }
         val connection = runBlocking { store.readProfileConnectionSettings(profile) }
         try {
@@ -24,6 +25,7 @@ class DesignCompatibilityTest {
                 store.saveUpdateCheckIntervalHours(UPDATE_CHECK_NEVER)
                 store.saveUiDesign("v2")
                 store.saveUiOwnerMode(false)
+                store.saveParticipantShowLogs(false)
                 store.saveBatterySaverMode("level")
                 store.saveBatterySaverPercent(20)
             }
@@ -36,11 +38,14 @@ class DesignCompatibilityTest {
             compose.onNodeWithText(BatterySaver.TITLE).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("Свой уровень").assertExists()
             compose.onNodeWithText("≤ 20 %").assertExists()
+            compose.onNodeWithText("Показывать логи").performScrollTo().performClick()
+            compose.waitUntil(5000) { runBlocking { store.participantShowLogs.first() } }
             compose.onNodeWithText("Классический").performScrollTo().performClick()
             compose.onNodeWithText("Новый").performClick()
             compose.waitUntil(5000) { runBlocking { store.uiDesign.first() == "v2" } }
             compose.onNodeWithText(BatterySaver.TITLE).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("≤ 20 %").assertExists()
+            compose.onNodeWithText("Показывать вкладку «Логи»").performScrollTo().assertExists()
             runBlocking {
                 assertEquals(profile, store.activeProfile.first())
                 val after = store.readProfileConnectionSettings(profile)
@@ -50,7 +55,7 @@ class DesignCompatibilityTest {
                 assertEquals(connection.workersPerHash, after.workersPerHash)
             }
         } finally {
-            runBlocking { store.saveUiDesign("v2"); store.saveUiOwnerMode(oldOwner); store.saveBatterySaverMode(oldMode); store.saveBatterySaverPercent(oldPercent) }
+            runBlocking { store.saveUiDesign("v2"); store.saveUiOwnerMode(oldOwner); store.saveParticipantShowLogs(oldShowLogs); store.saveBatterySaverMode(oldMode); store.saveBatterySaverPercent(oldPercent) }
         }
     }
 }

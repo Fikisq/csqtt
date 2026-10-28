@@ -1393,9 +1393,9 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
         }
     }
 
-    suspend fun saveFingerprint(fingerprint: String) {
+    suspend fun saveFingerprint(fingerprint: String, forProfile: Int? = null) {
         dataStore.edit { prefs ->
-            val profile = prefs[ACTIVE_PROFILE] ?: 0
+            val profile = forProfile ?: (prefs[ACTIVE_PROFILE] ?: 0)
             prefs[getProfileKey(SELECTED_FINGERPRINT, profile)] = fingerprint
         }
     }
@@ -1566,9 +1566,9 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
         }
     }
 
-    suspend fun saveParticipantShowLogs(show: Boolean) {
+    suspend fun saveParticipantShowLogs(show: Boolean, forProfile: Int? = null) {
         dataStore.edit { prefs ->
-            val profile = prefs[ACTIVE_PROFILE] ?: 0
+            val profile = forProfile ?: (prefs[ACTIVE_PROFILE] ?: 0)
             prefs[getProfileKey(PARTICIPANT_SHOW_LOGS, profile)] = show
         }
     }
@@ -2109,9 +2109,9 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
         }
     }
 
-    suspend fun saveExtraWorkers(enabled: Boolean) {
+    suspend fun saveExtraWorkers(enabled: Boolean, forProfile: Int? = null) {
         dataStore.edit { prefs ->
-            val profile = prefs[ACTIVE_PROFILE] ?: 0
+            val profile = forProfile ?: (prefs[ACTIVE_PROFILE] ?: 0)
             prefs[getProfileKey(EXTRA_WORKERS, profile)] = enabled
             if (!enabled) {
                 val current = prefs[getProfileKey(WORKERS_PER_HASH, profile)] ?: 18
@@ -2147,6 +2147,17 @@ private val DEPLOY_LAST_INSPECTION_PANEL = booleanPreferencesKey("deploy_last_in
     suspend fun markBatteryOptimizationPromptHandled() {
         dataStore.edit { prefs ->
             prefs[BATTERY_OPTIMIZATION_PROMPT_HANDLED] = true
+        }
+    }
+
+    /** Keep the selected captcha mode and its solver consistent in a single profile write. */
+    suspend fun saveCaptchaSettings(mode: String, wbvMethod: String, forProfile: Int) {
+        require(mode in listOf("auto", "wv", "rjs"))
+        require(wbvMethod in listOf("auto", "manual"))
+        dataStore.edit { prefs ->
+            prefs[getProfileKey(CAPTCHA_MODE, forProfile)] = mode
+            prefs[getProfileKey(CAPTCHA_WBV_SOLVE_METHOD, forProfile)] = wbvMethod
+            prefs[getProfileKey(CAPTCHA_SOLVE_METHOD, forProfile)] = if (mode == "wv") wbvMethod else "auto"
         }
     }
 
